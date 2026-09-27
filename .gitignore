@@ -13,7 +13,19 @@ desktop.ini
 __pycache__/
 *.pyc
 venv/
+.venv/
 .env
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Spark / streaming runtime state
+checkpoints/
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Datasets (raw, processed, scenarios) - rebuilt by pipeline scripts
+data/
 
 # Temporary / Scratch Files
 scratch/
