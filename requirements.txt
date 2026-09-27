@@ -1,0 +1,18 @@
+# Streaming infrastructure clients
+confluent-kafka>=2.5
+pyspark==3.5.3          # must match the Spark version in docker-compose.yml
+influxdb-client>=1.44
+
+# Online learning / drift detection
+river>=0.22
+
+# Data + analysis
+pandas>=2.2
+pyarrow>=16
+matplotlib>=3.8
+jupyter
+
+# System metrics + testing
+psutil>=5.9
+pytest>=8
+pyyaml>=6
