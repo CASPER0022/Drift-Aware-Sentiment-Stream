@@ -2,6 +2,7 @@
 #   Kafka (KRaft, single node)  host: localhost:9092   in-network: kafka:29092
 #   Kafka UI                    http://localhost:8085
 #   Spark master + worker       http://localhost:8090 (master UI), :8081 (worker UI), spark://spark-master:7077
+#                               driver UI of a running query: http://localhost:4040
 #   InfluxDB 2                  http://localhost:8086
 #   Grafana                     http://localhost:3000
 # Credentials come from .env (copy .env.example); the defaults below are for local dev only.
@@ -50,7 +51,8 @@ services:
         condition: service_healthy
 
   spark-master:
-    image: apache/spark:3.5.3-scala2.12-java17-python3-ubuntu
+    build: ./docker/spark   # apache/spark:3.5.3 + Kafka connector jars + influxdb-client
+    image: drift-stream/spark:3.5.3
     container_name: spark-master
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     environment:
@@ -58,11 +60,12 @@ services:
     ports:
       - "8090:8080"   # host 8080 is taken by a Windows service
       - "7077:7077"
+      - "4040:4040"   # UI of the streaming driver (spark-submit runs in this container)
     volumes:
       - ./:/opt/project
 
   spark-worker:
-    image: apache/spark:3.5.3-scala2.12-java17-python3-ubuntu
+    image: drift-stream/spark:3.5.3
     container_name: spark-worker
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     environment:
