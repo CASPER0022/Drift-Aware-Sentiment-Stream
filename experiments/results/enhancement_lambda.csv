@@ -1,0 +1,13 @@
+stream,config,idx,lambda
+s_label_flip_seed0,baseline,0,0.0
+s_label_flip_seed0,enhanced-adwin_only,0,0.0
+s_label_flip_seed0,enhanced-or,0,0.0
+s_label_flip_seed0,enhanced-and,0,0.0
+s_label_flip_topic_seed0,baseline,0,0.0
+s_label_flip_topic_seed0,enhanced-adwin_only,0,0.0
+s_label_flip_topic_seed0,enhanced-or,0,0.0
+s_label_flip_topic_seed0,enhanced-and,0,0.0
+ds1,baseline,0,0.0
+ds1,enhanced-adwin_only,0,0.0
+ds1,enhanced-or,0,0.0
+ds1,enhanced-and,0,0.0
