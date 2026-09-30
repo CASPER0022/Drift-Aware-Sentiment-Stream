@@ -30,3 +30,11 @@
 - **DS1, Table 1 params, w=24k:** 7 changes incl. 1,343,999 (first check after the natural change at 1,324,775). Accuracy: Rebuild 80.52%, FastSetFastReset 80.45%, SlowIncreaseFastReset 80.14%, FastSetSlowDecrease 80.05%, SlowIncreaseUpToALimit 79.66% vs fading 80.17%, accumulative 78.31%. Ordering as in the paper.
 - **Open choices (document):** SlowIncreaseUpToALimit lam_max not given in Table 1 - used 0.5; SlowIncreaseFastReset c=0.4 read from Table 1.
 - **Next:** Day 6 - baseline reproduction on DS1 + DS2, figures vs paper Fig. 2/3, tag `baseline-v1`.
+
+## Day 6 · Thu 1 Oct (done 30 Sep) - Checkpoint 1
+- **Done:** `experiments/configs/baseline.yaml` (Table 1 params, DS1 + DS2, all 12 configs incl. -Zero-/-Init-), `experiments/run_baseline.py` -> `results/baseline_{summary,windows,events,lambda}.csv`, `analysis/plot_baseline.py` -> Fig. 2/3-style figures.
+- **Results (overall accuracy):** DS1 accumulative 78.3%, fading 80.2%, informed 79.4-81.4% (best SlowIncreaseFastReset-Zero 81.4%, Rebuild-Zero 80.8%). DS2 accumulative 80.3%, fading 82.5%, informed 81.6-83.0% (best SlowIncreaseFastReset-Zero / Rebuild-Zero 83.0%). After the natural change point adaptive models reach 93-99.9% vs 77% (DS1) / 87% (DS2) for accumulative.
+- **Detector on DS2:** fires near all 7 true drift points (6 segment prior shifts + natural tail); on DS1 first change after the natural point at 1,343,999.
+- **Gate: PASSED (qualitative).** Matches paper: accumulative worst on both streams; adaptive ~2-3 pts better (paper ~5); clear jump after the change point. **Differs:** paper finds -Init- (lambda0 > 0) better; we find -Zero- better, because constant ageing costs ~1-2 pts in stable periods here. Lambda sweep for fadingMNB on DS1 (0.02/0.05/0.1/0.2 per hour -> 80.2/80.5/80.4/80.2%) shows no lambda removes that trade-off (pre-change 77.8 -> 76.3% as lambda grows; tail 92 -> 99%), so we keep Table 1 params and report the difference. It supports the paper's own argument for informed adaptation: forget only when the detector says so.
+- **Frozen:** tag `baseline-v1`.
+- **Next:** Day 7 - ADWIN on the prediction error + fusion modes; headline result on S-label-flip.
