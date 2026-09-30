@@ -16,3 +16,4 @@ jupyter
 psutil>=5.9
 pytest>=8
 pyyaml>=6
+scikit-learn>=1.5       # reference MultinomialNB in the tests
