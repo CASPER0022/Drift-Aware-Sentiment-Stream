@@ -18,13 +18,7 @@ import pandas as pd
 from confluent_kafka import KafkaException, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 
-from streams import PROCESSED, SCENARIOS
-
-
-def stream_path(name: str, seed: int):
-    if name in ("ds1", "ds2"):
-        return PROCESSED / f"{name}.parquet"
-    return SCENARIOS / f"{name}_seed{seed}.parquet"
+from streams import stream_path
 
 
 def ensure_topic(bootstrap: str, topic: str) -> None:
