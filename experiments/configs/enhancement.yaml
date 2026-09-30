@@ -1,0 +1,43 @@
+# Day 7: ADWIN enhancement vs the vocabulary-only baseline.
+# Every adaptive model uses the same base: Rebuild strategy with lambda0 = 0 (Rebuild-Zero,
+# a top baseline in Day 6), so the only difference between rows is the drift signal.
+
+defaults:
+  alpha: 1.0
+  time_unit: hour
+  eval_window: 10000
+  detect_alpha: 1.8
+  detect_beta: 0.334
+  detect_history: 20
+  detect_reference: previous
+  lam_max: 0.5
+  c: 0.1
+  decrease: 0.05
+  adwin_delta: 0.002
+  adwin_reaction: rebuild
+  confirm_window: null   # = w
+  cooldown: 2000
+  min_rebuild: 1000
+
+stream_options:
+  s_label_flip: {eval_window: 500, seed: 0}
+  s_label_flip_topic: {eval_window: 500, seed: 0}
+
+streams:
+  s_label_flip: &scenario_models
+    accumulativeMNB:     {model: accumulative}
+    fadingMNB:           {model: fading, lam: 0.2}
+    baseline:            {model: informed, strategy: Rebuild, lam: 0.0, w: 4000}
+    enhanced-adwin_only: {model: enhanced, fusion: adwin_only, strategy: Rebuild, lam: 0.0, w: 4000}
+    enhanced-or:         {model: enhanced, fusion: or, strategy: Rebuild, lam: 0.0, w: 4000}
+    enhanced-and:        {model: enhanced, fusion: and, strategy: Rebuild, lam: 0.0, w: 4000}
+
+  s_label_flip_topic: *scenario_models
+
+  ds1:
+    accumulativeMNB:     {model: accumulative}
+    fadingMNB:           {model: fading, lam: 0.2}
+    baseline:            {model: informed, strategy: Rebuild, lam: 0.0, w: 24000}
+    enhanced-adwin_only: {model: enhanced, fusion: adwin_only, strategy: Rebuild, lam: 0.0, w: 24000}
+    enhanced-or:         {model: enhanced, fusion: or, strategy: Rebuild, lam: 0.0, w: 24000}
+    enhanced-and:        {model: enhanced, fusion: and, strategy: Rebuild, lam: 0.0, w: 24000}
