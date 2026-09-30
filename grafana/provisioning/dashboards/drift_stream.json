@@ -1,0 +1,111 @@
+{
+  "uid": "drift-stream",
+  "title": "Drift Stream",
+  "tags": ["drift"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "run",
+        "label": "Run",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "influxdb-drift" },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"drift\", tag: \"run\", start: -30d)\n  |> sort(desc: true)",
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Prequential accuracy ($run)",
+      "description": "Per micro-batch accuracy and cumulative accuracy since the run started (test-then-train).",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-drift" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch_metrics\" and r.run == \"${run}\")\n  |> filter(fn: (r) => r._field == \"accuracy\" or r._field == \"accuracy_cum\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "accuracy" },
+            "properties": [ { "id": "displayName", "value": "batch accuracy" },
+                            { "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } } ] },
+          { "matcher": { "id": "byName", "options": "accuracy_cum" },
+            "properties": [ { "id": "displayName", "value": "cumulative accuracy" },
+                            { "id": "color", "value": { "mode": "fixed", "fixedColor": "#eb6834" } } ] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Throughput ($run)",
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-drift" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch_metrics\" and r.run == \"${run}\" and r._field == \"throughput\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "tweets/s",
+          "displayName": "tweets per second",
+          "color": { "mode": "fixed", "fixedColor": "#2a78d6" },
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "End-to-end latency, producer to model ($run)",
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-drift" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch_metrics\" and r.run == \"${run}\")\n  |> filter(fn: (r) => r._field == \"latency_ms\" or r._field == \"latency_p95_ms\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "latency_ms" },
+            "properties": [ { "id": "displayName", "value": "mean" },
+                            { "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } } ] },
+          { "matcher": { "id": "byName", "options": "latency_p95_ms" },
+            "properties": [ { "id": "displayName", "value": "p95" },
+                            { "id": "color", "value": { "mode": "fixed", "fixedColor": "#eb6834" } } ] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    }
+  ]
+}
