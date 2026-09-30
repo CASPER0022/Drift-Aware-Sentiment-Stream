@@ -11,6 +11,7 @@ One model instance is kept per producer `run`, so replays never share state.
 Run on the Docker Spark cluster with:  bash pipeline/submit_consumer.sh [--batch-size 1000]
 """
 import argparse
+import functools
 import time
 from datetime import datetime, timezone
 
@@ -20,10 +21,12 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, IntegerType, LongType, StringType, StructField, StructType
 
 from core.majority import MajorityClass
+from core.mnb import AccumulativeMNB, AgeingMNB
 from core.preprocess import tokenize
+from core.timeunit import TIME_UNITS, model_time
 from influx_sink import InfluxSink
 
-MODELS = {"majority": MajorityClass}
+MODELS = {"majority": MajorityClass, "accumulative": AccumulativeMNB, "fading": AgeingMNB}
 
 MESSAGE_SCHEMA = StructType([
     StructField("stream", StringType()),
@@ -40,9 +43,11 @@ MESSAGE_SCHEMA = StructType([
 class BatchProcessor:
     """The foreachBatch callback; lives on the driver and owns the model state."""
 
-    def __init__(self, model_name: str, sink: InfluxSink) -> None:
+    def __init__(self, model_name: str, make_model, sink: InfluxSink, time_unit: str) -> None:
         self.model_name = model_name
+        self.make_model = make_model
         self.sink = sink
+        self.time_unit = time_unit
         self.runs: dict[str, dict] = {}  # run -> {"model", "seen", "correct", "last_end"}
 
     def __call__(self, batch_df, batch_id: int) -> None:
@@ -55,14 +60,15 @@ class BatchProcessor:
             by_run.setdefault(row.run, []).append(row)
 
         for run, run_rows in by_run.items():
-            state = self.runs.setdefault(run, {"model": MODELS[self.model_name](), "seen": 0,
+            state = self.runs.setdefault(run, {"model": self.make_model(), "seen": 0,
                                                "correct": 0, "last_end": None})
             model = state["model"]
             correct = 0
             for row in run_rows:
                 tokens = list(row.tokens)
-                correct += int(model.predict_one(tokens) == row.label)
-                model.learn_one(tokens, row.label)
+                t = model_time(datetime.fromisoformat(row.ts), row.idx, self.time_unit)
+                correct += int(model.predict_one(tokens, t) == row.label)
+                model.learn_one(tokens, row.label, t)
             state["seen"] += len(run_rows)
             state["correct"] += correct
 
@@ -99,7 +105,9 @@ class BatchProcessor:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--model", choices=list(MODELS), default="majority")
+    ap.add_argument("--model", choices=list(MODELS), default="fading")
+    ap.add_argument("--lam", type=float, default=0.2, help="ageing factor for fading")
+    ap.add_argument("--time-unit", choices=TIME_UNITS, default="hour")
     ap.add_argument("--batch-size", type=int, default=1000, help="max tweets per micro-batch")
     ap.add_argument("--topic", default="tweets")
     ap.add_argument("--bootstrap", default="kafka:29092")
@@ -128,9 +136,12 @@ def main() -> None:
     # The model lives in driver memory, so a restart starts from scratch; a fresh checkpoint
     # keeps Kafka offsets consistent with that.
     checkpoint = args.checkpoint or f"/tmp/checkpoints/{args.model}-{int(time.time())}"
+    make_model = (functools.partial(AgeingMNB, lam=args.lam) if args.model == "fading"
+                  else MODELS[args.model])
+    label = f"fading_lam{args.lam:g}" if args.model == "fading" else args.model  # Influx tag
     sink = InfluxSink.from_env()
     query = (tweets.writeStream
-             .foreachBatch(BatchProcessor(args.model, sink))
+             .foreachBatch(BatchProcessor(label, make_model, sink, args.time_unit))
              .option("checkpointLocation", checkpoint)
              .start())
     print(f"consuming {args.topic!r} from {args.bootstrap} with model={args.model}, "
