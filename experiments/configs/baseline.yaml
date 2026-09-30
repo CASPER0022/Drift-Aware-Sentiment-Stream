@@ -1,0 +1,46 @@
+# Baseline reproduction: Iosifidis et al., Table 1 ("best parameter setting per strategy").
+# -Init- = lambda0 > 0, -Zero- = lambda0 = 0. Values the table leaves blank:
+#   w        -> 24k (DS1) / 22k (DS2), the w of the -Init- FastSet rows
+#   lam_max  -> 0.5 for the SlowIncrease strategies (not given in the table)
+# Time unit is hours (see NOTES.md, Day 4); detector history 20 checks (Day 5).
+
+defaults:
+  alpha: 1.0
+  time_unit: hour
+  eval_window: 10000
+  detect_alpha: 1.8
+  detect_beta: 0.334
+  detect_history: 20
+  detect_reference: previous
+  lam_max: 0.5
+  c: 0.1
+  decrease: 0.05
+
+streams:
+  ds1:
+    accumulativeMNB:              {model: accumulative}
+    fadingMNB:                    {model: fading, lam: 0.2}
+    Rebuild-Zero:                 {model: informed, strategy: Rebuild, lam: 0.0, w: 24000}
+    Rebuild-Init:                 {model: informed, strategy: Rebuild, lam: 0.2, w: 24000}
+    FastSetFastReset-Zero:        {model: informed, strategy: FastSetFastReset, lam: 0.0, w: 100000, lam_max: 0.5}
+    FastSetFastReset-Init:        {model: informed, strategy: FastSetFastReset, lam: 0.1, w: 24000, lam_max: 0.5}
+    FastSetSlowDecrease-Zero:     {model: informed, strategy: FastSetSlowDecrease, lam: 0.0, w: 100000, lam_max: 0.5, decrease: 0.05}
+    FastSetSlowDecrease-Init:     {model: informed, strategy: FastSetSlowDecrease, lam: 0.1, w: 24000, lam_max: 0.5, decrease: 0.05}
+    SlowIncreaseUpToALimit-Zero:  {model: informed, strategy: SlowIncreaseUpToALimit, lam: 0.0, w: 24000, c: 0.6}
+    SlowIncreaseUpToALimit-Init:  {model: informed, strategy: SlowIncreaseUpToALimit, lam: 0.2, w: 24000, c: 0.1}
+    SlowIncreaseFastReset-Zero:   {model: informed, strategy: SlowIncreaseFastReset, lam: 0.0, w: 24000, c: 0.4}
+    SlowIncreaseFastReset-Init:   {model: informed, strategy: SlowIncreaseFastReset, lam: 0.2, w: 24000, c: 0.4}
+
+  ds2:
+    accumulativeMNB:              {model: accumulative}
+    fadingMNB:                    {model: fading, lam: 0.3}
+    Rebuild-Zero:                 {model: informed, strategy: Rebuild, lam: 0.0, w: 22000}
+    Rebuild-Init:                 {model: informed, strategy: Rebuild, lam: 0.25, w: 22000}
+    FastSetFastReset-Zero:        {model: informed, strategy: FastSetFastReset, lam: 0.0, w: 100000, lam_max: 0.4}
+    FastSetFastReset-Init:        {model: informed, strategy: FastSetFastReset, lam: 0.15, w: 22000, lam_max: 0.5}
+    FastSetSlowDecrease-Zero:     {model: informed, strategy: FastSetSlowDecrease, lam: 0.0, w: 100000, lam_max: 0.4, decrease: 0.05}
+    FastSetSlowDecrease-Init:     {model: informed, strategy: FastSetSlowDecrease, lam: 0.15, w: 22000, lam_max: 0.5, decrease: 0.05}
+    SlowIncreaseUpToALimit-Zero:  {model: informed, strategy: SlowIncreaseUpToALimit, lam: 0.0, w: 22000, c: 0.1}
+    SlowIncreaseUpToALimit-Init:  {model: informed, strategy: SlowIncreaseUpToALimit, lam: 0.2, w: 22000, c: 0.1}
+    SlowIncreaseFastReset-Zero:   {model: informed, strategy: SlowIncreaseFastReset, lam: 0.0, w: 22000, c: 0.2}
+    SlowIncreaseFastReset-Init:   {model: informed, strategy: SlowIncreaseFastReset, lam: 0.2, w: 22000, c: 0.2}
