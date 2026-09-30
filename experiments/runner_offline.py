@@ -27,6 +27,8 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from core.adwin_detector import ErrorADWIN  # noqa: E402
+from core.enhanced import ADWIN_REACTIONS, FUSION_MODES, EnhancedMNB  # noqa: E402
 from core.informed import InformedAgeingMNB  # noqa: E402
 from core.majority import MajorityClass  # noqa: E402
 from core.metrics import prequential  # noqa: E402
@@ -47,13 +49,18 @@ def make_model(args):
         return AccumulativeMNB(alpha=args.alpha)
     if args.model == "fading":  # fadingMNB: ageing MNB with a fixed lambda (reference model)
         return AgeingMNB(lam=args.lam, alpha=args.alpha)
-    if args.model == "informed":  # the baseline: vocabulary detector + lambda strategy
+    if args.model in ("informed", "enhanced"):
         detector = VocabularyDetector(w=args.w, alpha=args.detect_alpha, beta=args.detect_beta,
                                       history=args.detect_history,
                                       reference=args.detect_reference)
         strategy = make_strategy(args.strategy, lam0=args.lam, lam_max=args.lam_max, c=args.c,
                                  decrease=args.decrease)
-        return InformedAgeingMNB(detector, strategy, alpha=args.alpha)
+        if args.model == "informed":  # the baseline: vocabulary detector + lambda strategy
+            return InformedAgeingMNB(detector, strategy, alpha=args.alpha)
+        return EnhancedMNB(detector, strategy, ErrorADWIN(delta=args.adwin_delta),
+                           fusion=args.fusion, adwin_reaction=args.adwin_reaction,
+                           confirm_window=args.confirm_window, cooldown=args.cooldown,
+                           min_rebuild=args.min_rebuild, lam_max=args.lam_max, alpha=args.alpha)
     raise ValueError(args.model)
 
 
@@ -62,6 +69,9 @@ def model_label(args) -> str:
         return f"fading_lam{args.lam:g}"
     if args.model == "informed":
         return f"informed_{args.strategy}_lam{args.lam:g}_w{args.w}_h{args.detect_history}"
+    if args.model == "enhanced":
+        return (f"enhanced_{args.fusion}_{args.adwin_reaction}_d{args.adwin_delta:g}_"
+                f"{args.strategy}_lam{args.lam:g}_w{args.w}")
     return args.model
 
 
@@ -76,8 +86,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stream", default="ds1")
     ap.add_argument("--seed", type=int, default=0, help="scenario seed")
-    ap.add_argument("--model", choices=["majority", "accumulative", "fading", "informed"],
-                    default="fading")
+    ap.add_argument("--model", choices=["majority", "accumulative", "fading", "informed",
+                                        "enhanced"], default="fading")
     ap.add_argument("--lam", type=float, default=0.2,
                     help="ageing factor for fading; initial lam0 for informed")
     ap.add_argument("--strategy", choices=STRATEGIES, default="FastSetFastReset")
@@ -90,6 +100,13 @@ def main() -> None:
     ap.add_argument("--detect-history", type=int, default=20,
                     help="checks in the detector's moving mean/std")
     ap.add_argument("--detect-reference", choices=["previous", "accumulated"], default="previous")
+    ap.add_argument("--fusion", choices=FUSION_MODES, default="or", help="enhanced: signal fusion")
+    ap.add_argument("--adwin-delta", type=float, default=0.002, help="enhanced: ADWIN confidence")
+    ap.add_argument("--adwin-reaction", choices=ADWIN_REACTIONS, default="rebuild")
+    ap.add_argument("--confirm-window", type=int, default=None,
+                    help="enhanced 'and' fusion: max distance between the two signals (default w)")
+    ap.add_argument("--cooldown", type=int, default=2000, help="enhanced: instances after a reaction")
+    ap.add_argument("--min-rebuild", type=int, default=1000, help="enhanced: min rebuild size")
     ap.add_argument("--alpha", type=float, default=1.0, help="Laplace smoothing")
     ap.add_argument("--time-unit", choices=TIME_UNITS, default="hour")
     ap.add_argument("--eval-window", type=int, default=None,
@@ -119,10 +136,13 @@ def main() -> None:
     summary = result.summary()
     row = {"run_id": run_id, "stream": path.stem, "model": args.model,
            "lam": args.lam if args.model in ("fading", "informed") else "",
-           "strategy": args.strategy if args.model == "informed" else "",
-           "w": args.w if args.model == "informed" else "",
-           "detect_history": args.detect_history if args.model == "informed" else "",
-           "detect_reference": args.detect_reference if args.model == "informed" else "",
+           "strategy": args.strategy if args.model in ("informed", "enhanced") else "",
+           "w": args.w if args.model in ("informed", "enhanced") else "",
+           "detect_history": args.detect_history if args.model in ("informed", "enhanced") else "",
+           "detect_reference": args.detect_reference if args.model in ("informed", "enhanced") else "",
+           "fusion": args.fusion if args.model == "enhanced" else "",
+           "adwin_delta": args.adwin_delta if args.model == "enhanced" else "",
+           "adwin_reaction": args.adwin_reaction if args.model == "enhanced" else "",
            "alpha": args.alpha,
            "time_unit": args.time_unit, "eval_window": eval_window,
            **{k: round(v, 5) if isinstance(v, float) else v for k, v in summary.items()},
@@ -136,7 +156,7 @@ def main() -> None:
     ends, acc = result.windowed_accuracy(eval_window)
     pd.DataFrame({"end_idx": ends, "accuracy": acc.round(5)}).to_csv(
         RESULTS / "windows" / f"{run_id}.csv", index=False)
-    if args.model == "informed":
+    if args.model in ("informed", "enhanced"):
         (RESULTS / "events").mkdir(parents=True, exist_ok=True)
         (RESULTS / "events" / f"{run_id}.json").write_text(json.dumps(
             {"events": model.events, "lambda_trace": model.lambda_trace, "checks": model.checks},
@@ -153,10 +173,13 @@ def main() -> None:
           f"R {summary['recall_macro']:.4f}  F1 {summary['f1_macro']:.4f}"
           + (f"   entries {row['model_entries']:,}" if row["model_entries"] != "" else "")
           + (f"   peak {peak_mb:.0f} MB" if peak_mb else ""))
-    if args.model == "informed":
-        changes = [e["idx"] for e in model.events if e["kind"] == "change"]
-        print(f"  {len(model.checks)} checks, {row['n_warnings']} warnings, "
-              f"{len(changes)} changes at {changes}")
+    if args.model in ("informed", "enhanced"):
+        for det in ("vocab", "adwin"):
+            changes = [e["idx"] for e in model.events if e["detector"] == det and e["kind"] == "change"]
+            rebuilds = [e["idx"] for e in model.events if e["detector"] == det and e["kind"] == "rebuild"]
+            if changes or det == "vocab":
+                print(f"  {det}: {len(changes)} changes at {changes}"
+                      + (f"; rebuilds at {rebuilds}" if rebuilds else ""))
         print(f"  lambda trace: {[(i, round(v, 3)) for i, v in model.lambda_trace]}")
     print(f"  saved {run_id}")
 
