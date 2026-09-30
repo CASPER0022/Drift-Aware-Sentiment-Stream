@@ -32,9 +32,20 @@
 - **Next:** Day 6 - baseline reproduction on DS1 + DS2, figures vs paper Fig. 2/3, tag `baseline-v1`.
 
 ## Day 6 · Thu 1 Oct (done 30 Sep) - Checkpoint 1
-- **Done:** `experiments/configs/baseline.yaml` (Table 1 params, DS1 + DS2, all 12 configs incl. -Zero-/-Init-), `experiments/run_baseline.py` -> `results/baseline_{summary,windows,events,lambda}.csv`, `analysis/plot_baseline.py` -> Fig. 2/3-style figures.
+- **Done:** `experiments/configs/baseline.yaml` (Table 1 params, DS1 + DS2, all 12 configs incl. -Zero-/-Init-), `experiments/run_baseline.py` (renamed `run_config.py` on Day 7; rerun with `--config experiments/configs/baseline.yaml`) -> `results/baseline_{summary,windows,events,lambda}.csv`, `analysis/plot_baseline.py` -> Fig. 2/3-style figures.
 - **Results (overall accuracy):** DS1 accumulative 78.3%, fading 80.2%, informed 79.4-81.4% (best SlowIncreaseFastReset-Zero 81.4%, Rebuild-Zero 80.8%). DS2 accumulative 80.3%, fading 82.5%, informed 81.6-83.0% (best SlowIncreaseFastReset-Zero / Rebuild-Zero 83.0%). After the natural change point adaptive models reach 93-99.9% vs 77% (DS1) / 87% (DS2) for accumulative.
 - **Detector on DS2:** fires near all 7 true drift points (6 segment prior shifts + natural tail); on DS1 first change after the natural point at 1,343,999.
 - **Gate: PASSED (qualitative).** Matches paper: accumulative worst on both streams; adaptive ~2-3 pts better (paper ~5); clear jump after the change point. **Differs:** paper finds -Init- (lambda0 > 0) better; we find -Zero- better, because constant ageing costs ~1-2 pts in stable periods here. Lambda sweep for fadingMNB on DS1 (0.02/0.05/0.1/0.2 per hour -> 80.2/80.5/80.4/80.2%) shows no lambda removes that trade-off (pre-change 77.8 -> 76.3% as lambda grows; tail 92 -> 99%), so we keep Table 1 params and report the difference. It supports the paper's own argument for informed adaptation: forget only when the detector says so.
 - **Frozen:** tag `baseline-v1`.
 - **Next:** Day 7 - ADWIN on the prediction error + fusion modes; headline result on S-label-flip.
+
+## Day 7 · Fri 2 Oct (done 1 Oct)
+- **Done:** `core/adwin_detector.py` (river ADWIN on err = [pred != label], rises only), `core/enhanced.py` (EnhancedMNB: vocab channel -> lambda strategy, ADWIN channel -> rebuild/fastset; fusion modes vocab_only / adwin_only / or / and; per-channel cooldown; 1k warm-up). `experiments/run_config.py` (generalised config runner) + `configs/enhancement.yaml`; `analysis/plot_enhancement.py` -> headline figure `enhancement_label_flip.png`. 36 tests.
+- **Design change - "confirm" -> "and":** the timeline's confirm mode lets ADWIN trigger alone, so its triggers equal OR. We use a strict AND instead (a signal counts only if the other detector fired within w instances).
+- **Scenario fix - S-label-flip now inverts every label** (general tweets, 50/50). The Day 2 version flipped topic A only; naive Bayes cannot learn a topic-conditional flip (words scored independently), so every NB model is capped at ~62% after the flip whatever it detects. Kept as `s_label_flip_topic` (appended to the builder so the other scenarios' samples are unchanged).
+- **Bugs found:** (1) resetting ADWIN on every rebuild blinded it: a vocab false alarm rebuild at 39,999 left a fresh ADWIN with no "normal" error level before the flip at 40,000 -> removed the reset. (2) a shared cooldown let that same false alarm swallow ADWIN's real detection -> cooldown per channel. (3) ADWIN fired at instance 95 on a brand-new model -> 1k warm-up.
+- **Headline (all vs Rebuild-Zero baseline, same base model):**
+  - S-label-flip: ADWIN delay **39** vs vocab 3,999; accuracy 72.2% -> 73.7% (adwin_only) / 73.8% (or) / 74.1% (and); accumulative 53.4%, fading 55.7% never recover.
+  - S-label-flip-topic: vocab **never detects**; ADWIN 103-135; 62.8% -> 63.5-64.0% (NB ceiling).
+  - DS1: ADWIN delay 704-992 vs vocab 19,224; 80.8% -> 81.6% (adwin_only) / 81.4% (or) / 81.8% (and) - above the best Day 6 baseline (81.4%). No harm from ADWIN false alarms on real data.
+- **Next:** Day 8 - detection metrics (delay, false alarms, misses, recovery time), system metrics, sensitivity sweep (ADWIN delta, vocab alpha); pick defaults incl. the headline fusion mode.
