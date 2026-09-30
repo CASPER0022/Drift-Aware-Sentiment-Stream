@@ -8,9 +8,14 @@ also shifts P(y). Tweets are drawn without replacement within one stream.
   s_sudden       topic A -> topic B at K                              (virtual drift, P(X))
   s_gradual      P(topic B) rises linearly 0 -> 1 over [K - W/2, K + W/2)
   s_recurring    A -> B -> A -> B, switching every N/4
-  s_label_flip   50% topic A + 50% general; at K the labels of topic A invert. P(X) and
-                 P(y) stay the same; only P(y|X) changes (real drift, same vocabulary)
+  s_label_flip   general tweets, 50/50; at K every label inverts. P(X) and P(y) stay the
+                 same; only P(y|X) changes (real drift, same vocabulary)
   s_prior_shift  general tweets, 50/50 positive before K and 10/90 after  (P(y))
+  s_label_flip_topic
+                 50% topic A + 50% general; at K only topic A's labels invert. Kept as an
+                 extra: a topic-conditional flip is not learnable by naive Bayes (words
+                 are scored independently, so "hate" cannot mean positive only in work
+                 tweets), which caps every NB model at ~62% after K whatever it detects.
 
 Topic A = work/school, topic B = music/movies, general = tweets matching neither.
 Pool B has only ~21.6k negatives, which caps N at 80k for balanced topics.
@@ -117,10 +122,18 @@ def scenario_recurring(n, rng):
 
 def scenario_label_flip(n, rng):
     k = n // 2
+    topics = np.full(n, "general")
+    return topics, balanced_classes(n, 0.5, rng), {
+        "drift_type": "real (all labels invert, same vocabulary)", "drift_points": [k],
+        "flip": {"topic": None, "from_idx": k}}
+
+
+def scenario_label_flip_topic(n, rng):
+    k = n // 2
     topics = rng.permutation(np.r_[np.full(round(n * FLIP_TOPIC_SHARE), "A"),
                                    np.full(n - round(n * FLIP_TOPIC_SHARE), "general")])
     return topics, classes_per_topic(topics, rng), {
-        "drift_type": "real (label flip of topic A, same vocabulary)", "drift_points": [k],
+        "drift_type": "real (label flip of topic A only, same vocabulary)", "drift_points": [k],
         "flip": {"topic": "A", "from_idx": k}}
 
 
@@ -138,6 +151,7 @@ SCENARIO_BUILDERS = {
     "s_recurring": scenario_recurring,
     "s_label_flip": scenario_label_flip,
     "s_prior_shift": scenario_prior_shift,
+    "s_label_flip_topic": scenario_label_flip_topic,  # appended last: keeps the others' RNG seeds
 }
 
 
@@ -153,7 +167,9 @@ def build(name, ds1, pools, n, seed):
     df["topic"] = topics
     df["label"] = df["orig_label"]
     if "flip" in meta:
-        flipped = (df["topic"] == meta["flip"]["topic"]) & (df["idx"] >= meta["flip"]["from_idx"])
+        flip_topic = meta["flip"]["topic"]
+        in_topic = df["topic"] == flip_topic if flip_topic else True
+        flipped = in_topic & (df["idx"] >= meta["flip"]["from_idx"])
         df.loc[flipped, "label"] = 1 - df.loc[flipped, "label"]
     df["label"] = df["label"].astype("int8")
     return df[BASE_COLUMNS + ["topic", "orig_label", "orig_ts"]], {**meta, "seed": seed}

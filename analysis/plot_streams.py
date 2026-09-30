@@ -24,7 +24,8 @@ from streams import PROCESSED, SCENARIOS  # noqa: E402
 FIG_DIR = ROOT / "analysis" / "figures"
 POS, TOPIC_B, FLIPPED = "#2a78d6", "#eb6834", "#1baf7a"  # categorical slots 1-3
 MUTED, GRID, SHADE = "#52514e", "#e4e3df", "#f0efec"
-SCENARIO_NAMES = ["s_sudden", "s_gradual", "s_recurring", "s_label_flip", "s_prior_shift"]
+SCENARIO_NAMES = ["s_sudden", "s_gradual", "s_recurring", "s_label_flip", "s_prior_shift",
+                  "s_label_flip_topic"]
 
 
 def windowed(values: np.ndarray, window: int) -> tuple[np.ndarray, np.ndarray]:
@@ -46,9 +47,12 @@ def draw(ax, df: pd.DataFrame, meta: dict) -> None:
     flipped = (df["label"] != df["orig_label"]).to_numpy() if "orig_label" in df else None
     if flipped is not None and flipped.any():
         x, flip_share = windowed(flipped, window)
-        _, a_share = windowed((df["topic"] == "A").to_numpy(), window)
-        ax.plot(x, flip_share / np.maximum(a_share, 1e-9), color=FLIPPED, linewidth=1.2,
-                label="topic A labels flipped")
+        label = "labels flipped"
+        if (df["topic"] == "A").any():  # topic-only flip: show the share within topic A
+            _, a_share = windowed((df["topic"] == "A").to_numpy(), window)
+            flip_share = flip_share / np.maximum(a_share, 1e-9)
+            label = "topic A labels flipped"
+        ax.plot(x, flip_share, color=FLIPPED, linewidth=1.2, label=label)
 
     ax.set_title(f"{meta['stream']}: {meta['drift_type']}", loc="left", fontsize=8)
     ax.set_ylim(-0.03, 1.03)
