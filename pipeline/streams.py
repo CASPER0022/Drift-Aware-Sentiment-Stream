@@ -16,6 +16,13 @@ DS1 = PROCESSED / "ds1.parquet"
 BASE_COLUMNS = ["idx", "id", "ts", "label", "user", "text"]
 
 
+def stream_path(name: str, seed: int = 0) -> Path:
+    """ds1 / ds2, or a scenario name such as s_label_flip plus its seed."""
+    if name in ("ds1", "ds2"):
+        return PROCESSED / f"{name}.parquet"
+    return SCENARIOS / f"{name}_seed{seed}.parquet"
+
+
 def load_ds1(columns=None) -> pd.DataFrame:
     return pd.read_parquet(DS1, columns=columns)
 

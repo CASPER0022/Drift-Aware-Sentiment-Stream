@@ -1,0 +1,4 @@
+run_id,stream,model,lam,alpha,time_unit,eval_window,n,accuracy,precision_0,recall_0,f1_0,precision_1,recall_1,f1_1,precision_macro,recall_macro,f1_macro,runtime_s,throughput,model_entries,peak_mem_mb
+ds1__accumulative__hour__20260930-134427,ds1,accumulative,0.0,1.0,hour,10000,1600000,0.78308,0.81501,0.73239,0.77149,0.75702,0.83376,0.79354,0.78602,0.78308,0.78252,17.0,94123,353941,
+ds1__fading_lam0.2__hour__20260930-134510,ds1,fading,0.2,1.0,hour,10000,1600000,0.8017,0.81172,0.78562,0.79845,0.7923,0.81777,0.80483,0.80201,0.8017,0.80164,28.4,56249,353941,
+ds1__fading_lam0.2__instance__20260930-134552,ds1,fading,0.2,1.0,instance,10000,1600000,0.73483,0.72997,0.74537,0.73759,0.73989,0.72428,0.732,0.73493,0.73483,0.7348,28.6,55973,353941,
