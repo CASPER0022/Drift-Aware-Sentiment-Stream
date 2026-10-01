@@ -17,3 +17,4 @@ psutil>=5.9
 pytest>=8
 pyyaml>=6
 scikit-learn>=1.5       # reference MultinomialNB in the tests
+websocket-client>=1.8   # analysis/grafana_screenshot.py drives headless Edge/Chrome
