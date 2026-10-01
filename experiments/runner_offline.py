@@ -28,15 +28,11 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core.adwin_detector import ErrorADWIN  # noqa: E402
-from core.enhanced import ADWIN_REACTIONS, FUSION_MODES, EnhancedMNB  # noqa: E402
-from core.informed import InformedAgeingMNB  # noqa: E402
-from core.majority import MajorityClass  # noqa: E402
-from core.mnb import AccumulativeMNB, AgeingMNB  # noqa: E402
+from core.enhanced import ADWIN_REACTIONS, FUSION_MODES  # noqa: E402
+from core.factory import MODELS, build_model  # noqa: E402
 from core.preprocess import tokenize  # noqa: E402
-from core.strategies import STRATEGIES, make_strategy  # noqa: E402
+from core.strategies import STRATEGIES  # noqa: E402
 from core.timeunit import TIME_UNITS, model_time  # noqa: E402
-from core.vocab_detector import VocabularyDetector  # noqa: E402
 from experiments.evaluate import drift_meta, run_and_measure  # noqa: E402
 from pipeline.streams import stream_path  # noqa: E402
 
@@ -44,25 +40,8 @@ RESULTS = ROOT / "experiments" / "results"
 
 
 def make_model(args):
-    if args.model == "majority":
-        return MajorityClass()
-    if args.model == "accumulative":
-        return AccumulativeMNB(alpha=args.alpha)
-    if args.model == "fading":  # fadingMNB: ageing MNB with a fixed lambda (reference model)
-        return AgeingMNB(lam=args.lam, alpha=args.alpha)
-    if args.model in ("informed", "enhanced"):
-        detector = VocabularyDetector(w=args.w, alpha=args.detect_alpha, beta=args.detect_beta,
-                                      history=args.detect_history,
-                                      reference=args.detect_reference)
-        strategy = make_strategy(args.strategy, lam0=args.lam, lam_max=args.lam_max, c=args.c,
-                                 decrease=args.decrease)
-        if args.model == "informed":  # the baseline: vocabulary detector + lambda strategy
-            return InformedAgeingMNB(detector, strategy, alpha=args.alpha)
-        return EnhancedMNB(detector, strategy, ErrorADWIN(delta=args.adwin_delta),
-                           fusion=args.fusion, adwin_reaction=args.adwin_reaction,
-                           confirm_window=args.confirm_window, cooldown=args.cooldown,
-                           min_rebuild=args.min_rebuild, lam_max=args.lam_max, alpha=args.alpha)
-    raise ValueError(args.model)
+    """Build the model described by an argparse / config Namespace (see core.factory)."""
+    return build_model(vars(args))
 
 
 def model_label(args) -> str:
@@ -87,8 +66,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stream", default="ds1")
     ap.add_argument("--seed", type=int, default=0, help="scenario seed")
-    ap.add_argument("--model", choices=["majority", "accumulative", "fading", "informed",
-                                        "enhanced"], default="fading")
+    ap.add_argument("--model", choices=MODELS, default="fading")
     ap.add_argument("--lam", type=float, default=0.2,
                     help="ageing factor for fading; initial lam0 for informed")
     ap.add_argument("--strategy", choices=STRATEGIES, default="FastSetFastReset")
