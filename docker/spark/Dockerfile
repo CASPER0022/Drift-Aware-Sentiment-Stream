@@ -11,7 +11,8 @@ ADD --chmod=644 ${MAVEN}/org/apache/kafka/kafka-clients/3.4.1/kafka-clients-3.4.
 ADD --chmod=644 ${MAVEN}/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar /opt/spark/jars/
 
 # The driver runs the model inside foreachBatch and writes metrics to InfluxDB.
-RUN python3 -m pip install --no-cache-dir "influxdb-client==1.48.0" "numpy==1.26.4"
+# river provides ADWIN for the enhanced model (driver side).
+RUN python3 -m pip install --no-cache-dir "influxdb-client==1.48.0" "numpy==1.26.4" "river==0.22.0"
 
 # Project code is bind-mounted here; executors import core/ from it for the tokenizer UDF.
 ENV PYTHONPATH=/opt/project
