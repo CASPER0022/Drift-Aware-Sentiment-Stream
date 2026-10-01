@@ -13,7 +13,8 @@ from river import drift
 class ErrorADWIN:
     name = "adwin"
 
-    def __init__(self, delta: float = 0.002, clock: int = 32, only_increase: bool = True) -> None:
+    # delta = 0.01 chosen by the Day 8 sweep: same accuracy as 0.002 / 0.05, fewest false alarms.
+    def __init__(self, delta: float = 0.01, clock: int = 32, only_increase: bool = True) -> None:
         self.delta, self.clock, self.only_increase = delta, clock, only_increase
         self.reset()
 

@@ -6,7 +6,7 @@ value is logged, for the offline results and for Grafana (via drain_events).
 """
 from core.mnb import AgeingMNB
 from core.strategies import Strategy
-from core.vocab_detector import NONE, VocabularyDetector
+from core.vocab_detector import CHANGE, NONE, VocabularyDetector
 
 
 class InformedAgeingMNB:
@@ -44,7 +44,8 @@ class InformedAgeingMNB:
         self.checks.append({"idx": idx, "signal": result.signal,
                             "precision_0": result.precision[0], "precision_1": result.precision[1]})
         if result.signal != NONE:
-            self.events.append({"idx": idx, "detector": "vocab", "kind": result.signal})
+            self.events.append({"idx": idx, "detector": "vocab", "kind": result.signal,
+                                "acted": result.signal == CHANGE})
 
         action = self.strategy.on_check(result.signal)
         if action is None:

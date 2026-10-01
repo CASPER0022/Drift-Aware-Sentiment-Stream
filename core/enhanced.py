@@ -16,7 +16,10 @@ How the channels combine is the fusion mode (the ablation):
 
 ADWIN reactions:
   rebuild   replace the model by one trained on the most recent instances: ADWIN's
-            post-drift window, at least `min_rebuild`, at most the recent buffer
+            post-drift window, at least `min_rebuild`, at most the recent buffer.
+            Keep min_rebuild small: ADWIN fires within tens of instances, so a large
+            minimum pads the rebuild with old-concept data (S-label-flip: min 1,000 ->
+            recovery 5,626 instances, min 100 -> 3,023)
   fastset   set lambda to lam_max for `fastset_period` instances, then restore it
 
 Each channel has its own cooldown: after a reaction, further triggers *from the same
@@ -46,7 +49,7 @@ class EnhancedMNB:
     def __init__(self, detector: VocabularyDetector, strategy: Strategy, adwin: ErrorADWIN,
                  fusion: str = "or", adwin_reaction: str = "rebuild",
                  confirm_window: int | None = None, cooldown: int = 2000,
-                 min_rebuild: int = 1000, buffer_size: int = 24_000, warmup: int = 1000,
+                 min_rebuild: int = 100, buffer_size: int = 24_000, warmup: int = 1000,
                  fastset_period: int | None = None, lam_max: float = 0.5,
                  alpha: float = 1.0) -> None:
         assert fusion in FUSION_MODES and adwin_reaction in ADWIN_REACTIONS
@@ -99,11 +102,12 @@ class EnhancedMNB:
         if (self.fusion != "vocab_only" and err is not None and idx >= self.warmup
                 and self.adwin.update(err)):
             self._last_adwin = idx
-            self.events.append({"idx": idx, "detector": "adwin", "kind": CHANGE,
+            confirmed = self.fusion != "and" or idx - self._last_vocab <= self.confirm_window
+            acted = confirmed and idx >= self._quiet_until["adwin"]
+            self.events.append({"idx": idx, "detector": "adwin", "kind": CHANGE, "acted": acted,
                                 "width": self.adwin.width,
                                 "error_rate": round(self.adwin.error_rate, 4)})
-            confirmed = self.fusion != "and" or idx - self._last_vocab <= self.confirm_window
-            if confirmed and idx >= self._quiet_until["adwin"]:
+            if acted:
                 self._react_to_adwin(idx)
 
         # vocab channel
@@ -114,14 +118,16 @@ class EnhancedMNB:
             return
         self.checks.append({"idx": idx, "signal": result.signal,
                             "precision_0": result.precision[0], "precision_1": result.precision[1]})
-        signal = result.signal
-        if signal != NONE:
-            self.events.append({"idx": idx, "detector": "vocab", "kind": signal})
-            self._last_vocab = idx
+        raw = signal = result.signal
         if self.fusion == "and" and signal in (WARNING, CHANGE):
             signal = CHANGE if idx - self._last_adwin <= self.confirm_window else NONE
         if idx < self._quiet_until["vocab"] and signal == CHANGE:
             signal = NONE  # this detector just reacted; don't stack another reaction on it
+        if raw != NONE:
+            # acted: the model treated this check as a change (after AND gating / cooldown)
+            self.events.append({"idx": idx, "detector": "vocab", "kind": raw,
+                                "acted": signal == CHANGE})
+            self._last_vocab = idx
         action = self.strategy.on_check(signal)
         if action is None:
             return
