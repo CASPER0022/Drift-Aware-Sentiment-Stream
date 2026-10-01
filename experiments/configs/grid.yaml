@@ -1,0 +1,43 @@
+# Day 10: full experiment grid. Every model on every stream; scenarios over 5 seeds.
+# Models (core.factory specs; keys not given use the factory defaults = Day 8 settings):
+#   references          accumulativeMNB, fadingMNB
+#   baseline (paper)    the two best informed strategies on DS1/DS2 in Day 6:
+#                       Rebuild-Zero and SlowIncreaseFastReset-Zero (vocabulary detector)
+#   enhanced (ours)     Rebuild-Zero + ADWIN, fusion adwin_only / or / and
+# Per-stream parameters: w and fading lambda follow Table 1 for DS1/DS2 (Day 6) and the
+# scenario setting of Days 5-8 (w = 4,000) for the controlled streams.
+
+defaults:
+  time_unit: hour
+  eval_window: 1000
+  tolerance: null         # experiments/evaluate.py: 50k for DS1/DS2, 10k for scenarios
+  recovery_window: null   # 10k for DS1/DS2, 1k for scenarios
+
+models:
+  accumulativeMNB:     {model: accumulative}
+  fadingMNB:           {model: fading, lam: 0.2}
+  baseline-Rebuild:    {model: informed, strategy: Rebuild, lam: 0.0}
+  baseline-SIFR:       {model: informed, strategy: SlowIncreaseFastReset, lam: 0.0, c: 0.4}
+  enhanced-adwin_only: {model: enhanced, fusion: adwin_only, strategy: Rebuild, lam: 0.0}
+  enhanced-or:         {model: enhanced, fusion: or, strategy: Rebuild, lam: 0.0}
+  enhanced-and:        {model: enhanced, fusion: and, strategy: Rebuild, lam: 0.0}
+
+streams:
+  ds1:
+    seeds: [0]
+    eval_window: 10000
+    params: {w: 24000}
+    overrides: {}
+  ds2:
+    seeds: [0]
+    eval_window: 10000
+    params: {w: 22000}
+    overrides:
+      fadingMNB: {lam: 0.3}          # Table 1, DS2
+      baseline-SIFR: {c: 0.2}        # Table 1, DS2
+  s_sudden:           {seeds: [0, 1, 2, 3, 4], params: {w: 4000}}
+  s_gradual:          {seeds: [0, 1, 2, 3, 4], params: {w: 4000}}
+  s_recurring:        {seeds: [0, 1, 2, 3, 4], params: {w: 4000}}
+  s_label_flip:       {seeds: [0, 1, 2, 3, 4], params: {w: 4000}}
+  s_prior_shift:      {seeds: [0, 1, 2, 3, 4], params: {w: 4000}}
+  s_label_flip_topic: {seeds: [0, 1, 2, 3, 4], params: {w: 4000}}
