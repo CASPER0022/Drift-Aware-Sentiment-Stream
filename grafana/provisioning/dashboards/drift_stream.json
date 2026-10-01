@@ -1,24 +1,84 @@
 {
   "uid": "drift-stream",
   "title": "Drift Stream",
-  "tags": ["drift"],
+  "tags": [
+    "drift"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "refresh": "5s",
-  "time": { "from": "now-15m", "to": "now" },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "name": "run",
         "label": "Run",
         "type": "query",
-        "datasource": { "type": "influxdb", "uid": "influxdb-drift" },
-        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"drift\", tag: \"run\", start: -30d)\n  |> sort(desc: true)",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-drift"
+        },
         "refresh": 2,
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"drift\", tag: \"run\", start: -30d)\n  |> sort(desc: true)",
         "includeAll": false,
         "multi": false
+      },
+      {
+        "name": "annotate_model",
+        "label": "Drift markers of",
+        "type": "custom",
+        "query": "enhanced,baseline",
+        "current": {
+          "text": "enhanced",
+          "value": "enhanced"
+        },
+        "options": [
+          {
+            "text": "enhanced",
+            "value": "enhanced",
+            "selected": true
+          },
+          {
+            "text": "baseline",
+            "value": "baseline",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Vocabulary detector",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-drift"
+        },
+        "enable": true,
+        "iconColor": "#eb6834",
+        "target": {
+          "refId": "Anno",
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"drift_event\" and r.run == \"${run}\" and r.detector == \"vocab\" and r._field == \"text\")\n  |> filter(fn: (r) => r.kind == \"change\" and r.model == \"${annotate_model}\")\n  |> map(fn: (r) => ({_time: r._time, text: r._value}))\n  |> group()\n"
+        }
+      },
+      {
+        "name": "ADWIN",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-drift"
+        },
+        "enable": true,
+        "iconColor": "#2a78d6",
+        "target": {
+          "refId": "Anno",
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"drift_event\" and r.run == \"${run}\" and r.detector == \"adwin\" and r._field == \"text\")\n  |> filter(fn: (r) => r.kind == \"change\" and r.model == \"${annotate_model}\")\n  |> map(fn: (r) => ({_time: r._time, text: r._value}))\n  |> group()\n"
+        }
       }
     ]
   },
@@ -26,86 +86,783 @@
     {
       "id": 1,
       "type": "timeseries",
-      "title": "Prequential accuracy ($run)",
-      "description": "Per micro-batch accuracy and cumulative accuracy since the run started (test-then-train).",
-      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
-      "datasource": { "type": "influxdb", "uid": "influxdb-drift" },
+      "title": "Accuracy per micro-batch (5-batch moving average)",
+      "description": "Prequential accuracy: each tweet is predicted before the model learns it. Annotations mark detected drift (orange: vocabulary detector, blue: ADWIN).",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 9
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-drift"
+      },
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch_metrics\" and r.run == \"${run}\")\n  |> filter(fn: (r) => r._field == \"accuracy\" or r._field == \"accuracy_cum\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])"
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-drift"
+          },
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"model_metrics\" and r.run == \"${run}\" and r._field == \"accuracy\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: r.model}))\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])\n  |> movingAverage(n: 5)\n"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "min": 0,
-          "max": 1,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
           "unit": "percentunit",
-          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+          "min": 0,
+          "max": 1
         },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "accuracy" },
-            "properties": [ { "id": "displayName", "value": "batch accuracy" },
-                            { "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } } ] },
-          { "matcher": { "id": "byName", "options": "accuracy_cum" },
-            "properties": [ { "id": "displayName", "value": "cumulative accuracy" },
-                            { "id": "color", "value": { "mode": "fixed", "fixedColor": "#eb6834" } } ] }
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "enhanced"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "baseline"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#eb6834"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "accumulative"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8984"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fading"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#1baf7a"
+                }
+              }
+            ]
+          }
         ]
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
     },
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Throughput ($run)",
-      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 8 },
-      "datasource": { "type": "influxdb", "uid": "influxdb-drift" },
+      "title": "Cumulative accuracy",
+      "description": "",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-drift"
+      },
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch_metrics\" and r.run == \"${run}\" and r._field == \"throughput\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])"
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-drift"
+          },
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"model_metrics\" and r.run == \"${run}\" and r._field == \"accuracy_cum\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: r.model}))\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])\n"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "percentunit",
           "min": 0,
-          "unit": "tweets/s",
-          "displayName": "tweets per second",
-          "color": { "mode": "fixed", "fixedColor": "#2a78d6" },
-          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+          "max": 1
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "enhanced"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "baseline"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#eb6834"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "accumulative"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8984"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fading"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#1baf7a"
+                }
+              }
+            ]
+          }
+        ]
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
     },
     {
       "id": 3,
       "type": "timeseries",
-      "title": "End-to-end latency, producer to model ($run)",
-      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 8 },
-      "datasource": { "type": "influxdb", "uid": "influxdb-drift" },
+      "title": "Macro F1 per micro-batch (5-batch moving average)",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-drift"
+      },
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"batch_metrics\" and r.run == \"${run}\")\n  |> filter(fn: (r) => r._field == \"latency_ms\" or r._field == \"latency_p95_ms\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])"
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-drift"
+          },
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"model_metrics\" and r.run == \"${run}\" and r._field == \"f1_macro\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: r.model}))\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])\n  |> movingAverage(n: 5)\n"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "percentunit",
           "min": 0,
-          "unit": "ms",
-          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+          "max": 1
         },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "latency_ms" },
-            "properties": [ { "id": "displayName", "value": "mean" },
-                            { "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } } ] },
-          { "matcher": { "id": "byName", "options": "latency_p95_ms" },
-            "properties": [ { "id": "displayName", "value": "p95" },
-                            { "id": "color", "value": { "mode": "fixed", "fixedColor": "#eb6834" } } ] }
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "enhanced"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "baseline"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#eb6834"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "accumulative"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8984"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fading"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#1baf7a"
+                }
+              }
+            ]
+          }
         ]
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Ageing factor lambda",
+      "description": "Rebuild strategies keep lambda at lambda0; rebuilds show in model size.",
+      "gridPos": {
+        "x": 8,
+        "y": 9,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-drift"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-drift"
+          },
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"model_metrics\" and r.run == \"${run}\" and r._field == \"lambda\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: r.model}))\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "axisSoftMax": 0.6
+          },
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "enhanced"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "baseline"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#eb6834"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "accumulative"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8984"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fading"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#1baf7a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Model size ((word, class) entries)",
+      "description": "Drops mark rebuilds after a detected drift.",
+      "gridPos": {
+        "x": 16,
+        "y": 9,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-drift"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-drift"
+          },
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"model_metrics\" and r.run == \"${run}\" and r._field == \"model_entries\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: r.model}))\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "enhanced"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "baseline"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#eb6834"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "accumulative"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8a8984"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fading"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#1baf7a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Throughput (tweets/s)",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-drift"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-drift"
+          },
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"pipeline_metrics\" and r.run == \"${run}\")\n  |> filter(fn: (r) => r._field == \"throughput\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "short",
+          "min": 0,
+          "displayName": "tweets per second"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "throughput"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "End-to-end latency, producer to models",
+      "description": "",
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-drift"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-drift"
+          },
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"pipeline_metrics\" and r.run == \"${run}\")\n  |> filter(fn: (r) => r._field == \"latency_ms\" or r._field == \"latency_p95_ms\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "ms",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "latency_ms"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "mean"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "latency_p95_ms"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "p95"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#eb6834"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Spark driver memory (RSS)",
+      "description": "",
+      "gridPos": {
+        "x": 16,
+        "y": 16,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-drift"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-drift"
+          },
+          "query": "from(bucket: \"drift\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"pipeline_metrics\" and r.run == \"${run}\")\n  |> filter(fn: (r) => r._field == \"driver_rss_mb\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "decmbytes",
+          "min": 0,
+          "displayName": "driver RSS"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "driver_rss_mb"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
     }
   ]
 }
