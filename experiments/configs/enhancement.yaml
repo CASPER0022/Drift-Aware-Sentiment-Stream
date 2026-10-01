@@ -13,11 +13,11 @@ defaults:
   lam_max: 0.5
   c: 0.1
   decrease: 0.05
-  adwin_delta: 0.002
+  adwin_delta: 0.01      # Day 8 sweep: fewest false alarms at equal accuracy
   adwin_reaction: rebuild
   confirm_window: null   # = w
   cooldown: 2000
-  min_rebuild: 1000
+  min_rebuild: 100     # rebuild on ADWIN's post-change window only (Day 8)
 
 stream_options:
   s_label_flip: {eval_window: 500, seed: 0}

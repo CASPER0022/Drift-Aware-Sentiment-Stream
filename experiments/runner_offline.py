@@ -3,7 +3,8 @@
 Uses the same core/ models, tokenizer and time unit as the streaming consumer, but
 iterates the parquet file directly so the experiment grid runs fast.
 
-Writes to experiments/results/:
+Prints the complete metrics row (quality, drift detection, recovery, system cost; see
+experiments/evaluate.py). With --save it also writes to experiments/results/:
   runs.csv                     one summary row per run (appended)
   windows/<run_id>.csv         accuracy per eval window, for accuracy-over-time plots
   events/<run_id>.json         informed models: detector checks, signals and lambda trace
@@ -31,12 +32,12 @@ from core.adwin_detector import ErrorADWIN  # noqa: E402
 from core.enhanced import ADWIN_REACTIONS, FUSION_MODES, EnhancedMNB  # noqa: E402
 from core.informed import InformedAgeingMNB  # noqa: E402
 from core.majority import MajorityClass  # noqa: E402
-from core.metrics import prequential  # noqa: E402
 from core.mnb import AccumulativeMNB, AgeingMNB  # noqa: E402
 from core.preprocess import tokenize  # noqa: E402
 from core.strategies import STRATEGIES, make_strategy  # noqa: E402
 from core.timeunit import TIME_UNITS, model_time  # noqa: E402
 from core.vocab_detector import VocabularyDetector  # noqa: E402
+from experiments.evaluate import drift_meta, run_and_measure  # noqa: E402
 from pipeline.streams import stream_path  # noqa: E402
 
 RESULTS = ROOT / "experiments" / "results"
@@ -101,18 +102,22 @@ def main() -> None:
                     help="checks in the detector's moving mean/std")
     ap.add_argument("--detect-reference", choices=["previous", "accumulated"], default="previous")
     ap.add_argument("--fusion", choices=FUSION_MODES, default="or", help="enhanced: signal fusion")
-    ap.add_argument("--adwin-delta", type=float, default=0.002, help="enhanced: ADWIN confidence")
+    ap.add_argument("--adwin-delta", type=float, default=0.01, help="enhanced: ADWIN confidence")
     ap.add_argument("--adwin-reaction", choices=ADWIN_REACTIONS, default="rebuild")
     ap.add_argument("--confirm-window", type=int, default=None,
                     help="enhanced 'and' fusion: max distance between the two signals (default w)")
     ap.add_argument("--cooldown", type=int, default=2000, help="enhanced: instances after a reaction")
-    ap.add_argument("--min-rebuild", type=int, default=1000, help="enhanced: min rebuild size")
+    ap.add_argument("--min-rebuild", type=int, default=100, help="enhanced: min rebuild size")
     ap.add_argument("--alpha", type=float, default=1.0, help="Laplace smoothing")
     ap.add_argument("--time-unit", choices=TIME_UNITS, default="hour")
     ap.add_argument("--eval-window", type=int, default=None,
                     help="instances per accuracy window (default: 10k for DS1/DS2, 1k otherwise)")
     ap.add_argument("--memory", action="store_true",
-                    help="track peak Python memory with tracemalloc (slows the run ~2x)")
+                    help="also measure peak Python memory with tracemalloc (slows the run ~2x)")
+    ap.add_argument("--tolerance", type=int, default=None,
+                    help="drift acceptance window (default 50k for DS1/DS2, 10k otherwise)")
+    ap.add_argument("--save", action="store_true",
+                    help="append the row to results/runs.csv and save windows/events files")
     args = ap.parse_args()
 
     path = stream_path(args.stream, args.seed)
@@ -124,64 +129,47 @@ def main() -> None:
     model = make_model(args)
     if args.memory:
         tracemalloc.start()
-    t0 = time.perf_counter()
-    result = prequential(model, instances)
-    run_s = time.perf_counter() - t0
+    metrics, result = run_and_measure(model, instances, drift_meta(path), tolerance=args.tolerance)
     peak_mb = tracemalloc.get_traced_memory()[1] / 2**20 if args.memory else None
     if args.memory:
         tracemalloc.stop()
 
     label = model_label(args)
     run_id = f"{path.stem}__{label}__{args.time_unit}__{datetime.now():%Y%m%d-%H%M%S}"
-    summary = result.summary()
-    row = {"run_id": run_id, "stream": path.stem, "model": args.model,
-           "lam": args.lam if args.model in ("fading", "informed") else "",
-           "strategy": args.strategy if args.model in ("informed", "enhanced") else "",
-           "w": args.w if args.model in ("informed", "enhanced") else "",
-           "detect_history": args.detect_history if args.model in ("informed", "enhanced") else "",
-           "detect_reference": args.detect_reference if args.model in ("informed", "enhanced") else "",
-           "fusion": args.fusion if args.model == "enhanced" else "",
-           "adwin_delta": args.adwin_delta if args.model == "enhanced" else "",
-           "adwin_reaction": args.adwin_reaction if args.model == "enhanced" else "",
-           "alpha": args.alpha,
-           "time_unit": args.time_unit, "eval_window": eval_window,
-           **{k: round(v, 5) if isinstance(v, float) else v for k, v in summary.items()},
-           "runtime_s": round(run_s, 1), "throughput": round(len(df) / run_s),
-           "model_entries": getattr(model, "size", ""),
-           "n_changes": sum(e["kind"] == "change" for e in getattr(model, "events", [])),
-           "n_warnings": sum(e["kind"] == "warning" for e in getattr(model, "events", [])),
-           "peak_mem_mb": round(peak_mb, 1) if peak_mb is not None else ""}
+    adaptive = args.model in ("informed", "enhanced")
+    row = {"run_id": run_id, "stream": path.stem, "model": args.model, "label": label,
+           "lam": args.lam if args.model in ("fading", "informed", "enhanced") else None,
+           "strategy": args.strategy if adaptive else None,
+           "w": args.w if adaptive else None,
+           "detect_alpha": args.detect_alpha if adaptive else None,
+           "fusion": args.fusion if args.model == "enhanced" else None,
+           "adwin_delta": args.adwin_delta if args.model == "enhanced" else None,
+           "adwin_reaction": args.adwin_reaction if args.model == "enhanced" else None,
+           "time_unit": args.time_unit, **metrics, "peak_mem_mb": peak_mb}
 
-    (RESULTS / "windows").mkdir(parents=True, exist_ok=True)
-    ends, acc = result.windowed_accuracy(eval_window)
-    pd.DataFrame({"end_idx": ends, "accuracy": acc.round(5)}).to_csv(
-        RESULTS / "windows" / f"{run_id}.csv", index=False)
-    if args.model in ("informed", "enhanced"):
-        (RESULTS / "events").mkdir(parents=True, exist_ok=True)
-        (RESULTS / "events" / f"{run_id}.json").write_text(json.dumps(
-            {"events": model.events, "lambda_trace": model.lambda_trace, "checks": model.checks},
-            indent=1))
-    runs_csv = RESULTS / "runs.csv"
-    runs = pd.DataFrame([row])
-    if runs_csv.exists():  # concat keeps older rows readable when new columns appear
-        runs = pd.concat([pd.read_csv(runs_csv), runs], ignore_index=True)
-    runs.to_csv(runs_csv, index=False)
+    print(f"{path.stem} | {label} | {len(df):,} tweets (load {load_s:.0f}s)")
+    for key, value in row.items():
+        if key in ("run_id", "stream", "label") or value is None:
+            continue
+        shown = f"{value:,.4f}".rstrip("0").rstrip(".") if isinstance(value, float) else value
+        print(f"  {key:22s} {shown}")
 
-    print(f"{path.stem} | {label} | t in {args.time_unit}s | {len(df):,} tweets "
-          f"(load {load_s:.0f}s, run {run_s:.0f}s = {len(df) / run_s:,.0f}/s)")
-    print(f"  accuracy {summary['accuracy']:.4f}   macro P {summary['precision_macro']:.4f}  "
-          f"R {summary['recall_macro']:.4f}  F1 {summary['f1_macro']:.4f}"
-          + (f"   entries {row['model_entries']:,}" if row["model_entries"] != "" else "")
-          + (f"   peak {peak_mb:.0f} MB" if peak_mb else ""))
-    if args.model in ("informed", "enhanced"):
-        for det in ("vocab", "adwin"):
-            changes = [e["idx"] for e in model.events if e["detector"] == det and e["kind"] == "change"]
-            rebuilds = [e["idx"] for e in model.events if e["detector"] == det and e["kind"] == "rebuild"]
-            if changes or det == "vocab":
-                print(f"  {det}: {len(changes)} changes at {changes}"
-                      + (f"; rebuilds at {rebuilds}" if rebuilds else ""))
-        print(f"  lambda trace: {[(i, round(v, 3)) for i, v in model.lambda_trace]}")
-    print(f"  saved {run_id}")
+    if args.save:
+        (RESULTS / "windows").mkdir(parents=True, exist_ok=True)
+        ends, acc = result.windowed_accuracy(eval_window)
+        pd.DataFrame({"end_idx": ends, "accuracy": acc.round(5)}).to_csv(
+            RESULTS / "windows" / f"{run_id}.csv", index=False)
+        if adaptive:
+            (RESULTS / "events").mkdir(parents=True, exist_ok=True)
+            (RESULTS / "events" / f"{run_id}.json").write_text(json.dumps(
+                {"events": model.events, "lambda_trace": model.lambda_trace,
+                 "checks": model.checks}, indent=1))
+        runs_csv = RESULTS / "runs.csv"
+        runs = pd.DataFrame([row])
+        if runs_csv.exists():  # concat keeps older rows readable when new columns appear
+            runs = pd.concat([pd.read_csv(runs_csv), runs], ignore_index=True)
+        runs.to_csv(runs_csv, index=False)
+        print(f"  saved {run_id}")
 
 
 if __name__ == "__main__":
