@@ -93,8 +93,8 @@ def main() -> None:
     base = summary[summary["config"] == "baseline"].set_index("stream")
     streams = [s for s in STREAM_LABELS if s in rows.index]
     y = np.arange(len(streams))
-    for offset, delays, color, label in ((0.18, base["vocab_delay"], ORANGE, "vocabulary detector"),
-                                         (-0.18, rows["adwin_delay"], BLUE, "ADWIN")):
+    for offset, delays, color, label in ((0.18, base["vocab_mean_delay"], ORANGE, "vocabulary detector"),
+                                         (-0.18, rows["adwin_mean_delay"], BLUE, "ADWIN")):
         for yi, s in zip(y, streams):
             d = pd.to_numeric(delays.get(s), errors="coerce")
             if np.isnan(d):
