@@ -1,0 +1,2 @@
+run,target_rate,n,batches,mean_batch_size,achieved_throughput,latency_median_ms,latency_p95_ms,latency_max_ms,batch_ms_p50,batch_ms_p95,driver_rss_peak_mb,baseline_ms_per_1k,baseline_accuracy,enhanced_ms_per_1k,enhanced_accuracy
+ds1-20261001-133917,3000.0,150000,126,1190.48,2962.53,615.64,1046.47,1315.36,313.23,486.32,333.96,24.32,0.83,30.66,0.86
