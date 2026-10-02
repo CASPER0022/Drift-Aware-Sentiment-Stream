@@ -1,0 +1,19 @@
+\begin{table*}[t]
+\centering
+\footnotesize
+\caption{Prequential accuracy (\%) per stream; scenarios: mean $\pm$ std over 5 seeds.}
+\label{tab:accuracy}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Model & DS1 & DS2 & label flip & label flip (topic) & prior shift & sudden & gradual & recurring \\
+\midrule
+accumulative MNB & 78.3 & 80.3 & 53.3 $\pm$ 0.1 & 62.3 $\pm$ 0.1 & 80.3 $\pm$ 0.1 & 73.9 $\pm$ 0.1 & 73.8 $\pm$ 0.1 & 74.0 $\pm$ 0.1 \\
+fading MNB & 80.2 & 82.5 & 55.7 $\pm$ 0.1 & 62.3 $\pm$ 0.1 & 80.1 $\pm$ 0.1 & 73.8 $\pm$ 0.1 & 73.8 $\pm$ 0.1 & 73.9 $\pm$ 0.1 \\
+baseline: Rebuild-Zero & 80.8 & 83.0 & 71.0 $\pm$ 1.0 & 63.1 $\pm$ 0.4 & 81.6 $\pm$ 0.3 & 73.9 $\pm$ 0.2 & 73.7 $\pm$ 0.1 & 73.3 $\pm$ 0.2 \\
+baseline: SlowIncreaseFastReset-Zero & 81.4 & 83.0 & 54.5 $\pm$ 0.6 & 62.2 $\pm$ 0.1 & 80.2 $\pm$ 0.1 & 73.7 $\pm$ 0.1 & 73.7 $\pm$ 0.1 & 73.8 $\pm$ 0.1 \\
+enhanced: ADWIN only & 81.6 & 84.1 & 74.3 $\pm$ 0.1 & 64.0 $\pm$ 0.2 & 80.3 $\pm$ 0.1 & 73.9 $\pm$ 0.1 & 73.8 $\pm$ 0.1 & 73.7 $\pm$ 0.3 \\
+enhanced: OR & 81.3 & 83.7 & 73.8 $\pm$ 0.3 & 63.5 $\pm$ 0.5 & 81.6 $\pm$ 0.3 & 73.9 $\pm$ 0.2 & 73.7 $\pm$ 0.1 & 73.2 $\pm$ 0.1 \\
+enhanced: AND & 81.7 & 84.0 & 73.4 $\pm$ 0.9 & 63.8 $\pm$ 0.5 & 80.3 $\pm$ 0.1 & 73.9 $\pm$ 0.1 & 73.8 $\pm$ 0.1 & 73.6 $\pm$ 0.3 \\
+\bottomrule
+\end{tabular}
+\end{table*}
