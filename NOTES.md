@@ -73,3 +73,10 @@
 - **Win count:** enhanced-or >= baseline-Rebuild in 28 of 32 stream-seeds.
 - **Why baseline-SIFR collapses on S-label-flip (54.5%):** lambda is per hour and the scenarios span ~22 synthetic hours, so raising lambda barely ages the model; Rebuild does not depend on the time scale. Report it as a limitation of lambda-based strategies on short streams.
 - **Next:** Day 11 - figures and the main results table, 6-10 inferences.
+
+## Day 11 · Tue 6 Oct (done 2 Oct) - Checkpoint 2
+- **Done:** `analysis/make_report_figures.py` builds everything from the grid: fig1 accuracy over time DS1/DS2 with detections, fig2 S-label-flip mean + min-max band over 5 seeds, fig3 detection delay / false alarms / misses per stream, fig4 recovery time, fig5 fusion-mode ablation (gain over baseline + detected vs false alarms); tables `table_accuracy`, `table_main`, `table_cost` (CSV in `experiments/results/`, LaTeX booktabs in `report/tables/`, wide ones as table*). 10 inferences in `report/inferences.md`.
+- **Headline numbers for the report:** label flip 73.8 +- 0.3 (OR) vs 71.0 +- 1.0 (baseline), delay 39 vs 3,999, recovery 3,183 vs 8,204; topic flip detected 5/5 (ADWIN) vs 3/5; DS1 81.3-81.7 vs 80.8, DS2 83.7-84.1 vs 83.0; OR >= baseline in 28/32 stream-seeds; OR detects 39/47 drifts, 102 false alarms (baseline 36/47, 70).
+- **Caveat surfaced:** mean recovery only averages drifts a model recovers from, so the table also reports "Never rec." (accumulative / fading / SIFR 10 = 5 label flip + 5 topic flip; Rebuild and all enhanced 6 = 5 topic flip (NB ceiling) + 1 DS2 drift).
+- **Gate: PASSED.** All figures and tables final; no new experiments from here (only reruns of something broken).
+- **Next:** Day 12 - IEEE report part 1 (abstract, intro, related work, methodology, architecture figure).
