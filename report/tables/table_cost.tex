@@ -1,0 +1,14 @@
+\begin{table}[t]
+\centering
+\footnotesize
+\caption{Cost of the enhancement. Offline: mean over the grid runs. Spark: model time per 1k tweets in the streaming pipeline (S-label-flip, 1,000 tweets/s); the pipeline adds about 170 ms fixed overhead per micro-batch for both.}
+\label{tab:cost}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Offline tweets/s & Batch p50 / p95 (ms) & Entries & Spark ms per 1k \\
+\midrule
+baseline: Rebuild-Zero & 38,303 & 29 / 55 & 41,934 & 22.6 \\
+enhanced: OR & 37,213 & 27 / 58 & 40,088 & 32.9 \\
+\bottomrule
+\end{tabular}
+\end{table}

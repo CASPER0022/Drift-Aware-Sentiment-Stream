@@ -1,0 +1,19 @@
+\begin{table*}[t]
+\centering
+\footnotesize
+\caption{Main results over the grid (7 models x 8 streams, scenarios x 5 seeds). Acc., P, R, F1 in \%; macro P/R/F1 averaged over all runs; detection over all 47 true drifts (FA = false alarms); delay and recovery in instances (recovery averages the drifts a model recovers from; Never rec. counts the others); cost from the offline runner (throughput, p95 time per 1k-tweet batch, (word, class) entries).}
+\label{tab:main}
+\begin{tabular}{lrrrrrrrrrrrrrr}
+\toprule
+Model & Acc. scen. & Acc. DS1 & Acc. DS2 & P & R & F1 & Detected & FA & Delay & Recovery & Never rec. & Tweets/s & Batch p95 (ms) & Entries \\
+\midrule
+accumulative MNB & 69.6 & 78.3 & 80.3 & 69.6 & 69.7 & 69.6 & - & - & - & 1,685 & 10 & 78k & 22 & 75k \\
+fading MNB & 69.9 & 80.2 & 82.5 & 70.0 & 70.1 & 70.0 & - & - & - & 310 & 10 & 46k & 35 & 75k \\
+baseline: Rebuild-Zero & 72.8 & 80.8 & 83.0 & 72.9 & 72.4 & 72.6 & 36/47 & 70 & 4,766 & 2,230 & 6 & 38k & 55 & 42k \\
+baseline: SlowIncreaseFastReset-Zero & 69.7 & 81.4 & 83.0 & 69.8 & 69.9 & 69.9 & 36/47 & 70 & 4,766 & 906 & 10 & 43k & 37 & 75k \\
+enhanced: ADWIN only & 73.3 & 81.6 & 84.1 & 73.3 & 73.4 & 73.3 & 18/47 & 29 & 839 & 821 & 6 & 46k & 33 & 54k \\
+enhanced: OR & 73.3 & 81.3 & 83.7 & 73.4 & 72.9 & 73.1 & 39/47 & 102 & 2,290 & 1,247 & 6 & 37k & 58 & 40k \\
+enhanced: AND & 73.1 & 81.7 & 84.0 & 73.1 & 73.2 & 73.1 & 18/47 & 30 & 1,837 & 1,165 & 6 & 41k & 37 & 54k \\
+\bottomrule
+\end{tabular}
+\end{table*}
