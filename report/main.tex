@@ -1,0 +1,434 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\graphicspath{{figures/}}
+% Let floats fill more of a page so they stay close to the text that cites them.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\dbltopfraction}{0.9}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.8}
+\renewcommand{\dblfloatpagefraction}{0.8}
+\setcounter{topnumber}{3}
+\setcounter{dbltopnumber}{2}
+\setcounter{totalnumber}{5}
+
+\begin{document}
+
+\title{Detecting Meaning Drift in Twitter Sentiment Streams:\\
+Informed Ageing Naive Bayes with an Error-Based ADWIN Detector}
+
+% TODO: replace with the group members' names, roll numbers and institution.
+\author{\IEEEauthorblockN{Group 18 --- \textit{member names}}
+\IEEEauthorblockA{Streaming Data Analysis, Semester 7\\
+\textit{Institution}}}
+
+\maketitle
+
+\begin{abstract}
+Sentiment classifiers deployed on social media streams degrade when the stream changes, a
+phenomenon known as concept drift. Iosifidis et al.\ adapt an ageing Multinomial Naive Bayes
+(MNB) classifier when a vocabulary-based detector signals change. Such a detector, however,
+only sees changes in \emph{which words} are used; it cannot see a change in \emph{what they
+mean}. We reproduce the informed ageing MNB on the Sentiment140 stream and add an ADWIN
+detector on the prequential error stream, fused with the vocabulary detector. The system runs
+end to end on Apache Kafka and Spark Structured Streaming with metrics in InfluxDB and live
+dashboards in Grafana. On controlled drift scenarios with known drift points, ADWIN detects a
+label flip after 39 instances instead of 3{,}999, recovers in 3{,}183 instances instead of
+8{,}204 and raises accuracy from 71.0\% to 73.8\% (5 seeds). When only one topic's meaning
+changes, the vocabulary detector misses the drift in 2 of 5 runs while ADWIN detects all of
+them. On the real streams the enhancement improves accuracy from 80.8\% to 81.3--81.7\% (DS1)
+and from 83.0\% to 83.7--84.1\% (DS2), adding about 10\,ms of model time per 1{,}000 tweets
+in the streaming pipeline.
+\end{abstract}
+
+\begin{IEEEkeywords}
+concept drift, data streams, sentiment analysis, ADWIN, naive Bayes, Apache Kafka, Spark
+Structured Streaming
+\end{IEEEkeywords}
+
+\section{Introduction}
+Opinions on social media form an unbounded, non-stationary stream: topics come and go,
+vocabulary evolves and real-world events shift the sentiment towards an entity. Bechini et
+al.\ show that a stance classifier trained once and deployed on Twitter loses accuracy as
+events change the discussion, and that adaptive learning schemes recover it~\cite{bechini2021}.
+In streaming terms this is \emph{concept drift}: the joint distribution $P(X, y)$ changes
+over time~\cite{gama2014}. A change in $P(X)$ alone (new words, new topics) is \emph{virtual}
+drift; a change in $P(y\,|\,X)$ (the same words now signal a different class) is \emph{real}
+drift, and only real drift necessarily hurts a classifier.
+
+Iosifidis et al.\ propose \emph{informed} adaptation for sentiment streams~\cite{iosifidis2017}:
+an ageing MNB classifier forgets old observations through an ageing factor $\lambda$, and a
+vocabulary-based change detector decides when to forget faster or rebuild. The detector compares
+the vocabulary of recent tweets with that of past tweets, so it reacts to virtual drift by
+construction. The authors note that their detector reacts with delay because vocabularies of
+different topics overlap~\cite{iosifidis2017}. A drift in meaning with an unchanged vocabulary,
+such as a word that changes polarity after an event, is invisible to it.
+
+This project asks whether monitoring the classifier's own errors closes that gap. Our
+contributions are:
+\begin{itemize}
+\item A reproduction of the informed ageing MNB with all five $\lambda$ strategies on the
+  Sentiment140 stream and a volatile variant, including fixes to the detector that the paper
+  leaves underspecified (Section~\ref{sec:method}).
+\item An enhancement that adds ADWIN~\cite{bifet2007} on the prequential error stream, with four
+  fusion modes and a rebuild reaction on the post-drift window.
+\item Controlled drift scenarios with known drift points, following Costa et
+  al.~\cite{costa2014}, including a label-flip scenario that isolates real drift with an
+  unchanged vocabulary, and an evaluation of detection delay, false alarms, misses, recovery
+  time and cost over 224 runs.
+\item An end-to-end streaming system on Kafka, Spark, InfluxDB and Grafana that runs both models
+  side by side on identical data.
+\end{itemize}
+
+\section{Related Work}
+\textbf{Concept drift.} Gama et al.\ survey drift detection and adaptation and distinguish
+\emph{blind} adaptation (forgetting at a fixed rate, e.g.\ a sliding or damped window) from
+\emph{informed} adaptation that reacts to detected change~\cite{gama2014}. ADWIN keeps an
+adaptive window over a numeric stream and cuts it when two sub-windows have significantly
+different means, with rigorous false-positive and false-negative bounds~\cite{bifet2007}; applied
+to a 0/1 error stream it is a standard error-rate drift detector.
+
+\textbf{Sentiment streams.} Bifet and Frank study sentiment classification on Twitter as a
+stream and its evaluation~\cite{bifet2010}. Wagner et al.\ introduce the ageing MNB, which
+weights class and word counts by the recency of their last observation~\cite{wagner2015}.
+Iosifidis et al.\ make the ageing factor adaptive with a vocabulary-based detector and five
+tuning strategies, evaluated on Sentiment140~\cite{iosifidis2017,go2009}.
+
+\textbf{Drift types on Twitter.} Costa et al.\ simulate sudden, gradual, incremental and
+recurring drift by re-timestamping real tweets and show that no single learning strategy is best
+for all drift types~\cite{costa2014}. Bechini et al.\ document event-driven drift in a real
+Twitter stance stream~\cite{bechini2021}. We borrow the scenario methodology of the former and
+the motivation of the latter.
+
+\textbf{Systems.} Kafka provides an ordered, replayable log for event streams~\cite{kreps2011};
+Spark Structured Streaming processes it in micro-batches~\cite{armbrust2018}; River provides
+online learning and drift detectors in Python~\cite{montiel2021}.
+
+\section{Method}\label{sec:method}
+
+\subsection{Ageing Multinomial Naive Bayes}
+Following~\cite{wagner2015,iosifidis2017}, the model stores for every class $c$ its count $N_c$
+and last observation time $t^c_{lo}$, and for every (word, class) pair its count $N_{wc}$ and
+last time $t^{w,c}_{lo}$. At time $t$ counts are aged on read:
+\begin{align}
+P^t(c) &\propto N_c\, e^{-\lambda (t - t^c_{lo})}, \label{eq:prior}\\
+P^t(w\,|\,c) &= \frac{N_{wc}\, e^{-\lambda (t - t^{w,c}_{lo})} + \alpha}
+  {\sum_{j} N_{jc}\, e^{-\lambda (t - t^{j,c}_{lo})} + \alpha |V|}, \label{eq:likelihood}
+\end{align}
+with Laplace smoothing $\alpha = 1$; scores are computed in log space and unseen words are
+ignored. With $\lambda = 0$ the model is the accumulative MNB. The sum in the denominator of
+\eqref{eq:likelihood} runs over the whole vocabulary; we cache it per class relative to a reference
+time, replace a word's term in $O(1)$ when it is learnt and rescale the cache before
+$e^{\lambda(t - t_{ref})}$ can overflow, so prediction costs $O(|d|)$ per tweet. Unit tests
+check the cached form against the literal equations and the accumulative model against
+scikit-learn's \texttt{MultinomialNB}.
+
+\emph{Time unit.} We measure $t$ in hours from the tweet timestamp. With the paper's
+$\lambda = 0.2$ per \emph{instance}, a word unseen for 100 tweets keeps $e^{-20} \approx 2\cdot
+10^{-9}$ of its weight; on DS1 this drops pre-change accuracy to 68.0\%, while per hour the
+model behaves as reported in the paper.
+
+\subsection{Vocabulary-Based Change Detector (Baseline)}
+Every $w$ instances the detector compares, per class, the vocabulary $V_{sl}$ of the latest
+window with the vocabulary $V$ of a reference window by
+$\mathrm{precision} = |V_{sl} \cap V| / |V|$ and flags a change if the precision leaves
+$\mu \pm \alpha_d \sigma$ ($\alpha_d = 1.8$) and a warning at $\beta \sigma$ ($\beta = 0.334$),
+where $\mu, \sigma$ are the moving mean and standard deviation of past
+checks~\cite{iosifidis2017}. Two details are not fixed by the paper and matter in practice. An
+\emph{accumulated} reference vocabulary grows while $V_{sl}$ does not, so precision falls
+steadily (0.45 to 0.10 over 80k stable tweets) and the detector fires constantly; we use the
+\emph{previous window} as reference, which makes the statistic stationary. Moving statistics over
+10 checks produced many false alarms; 20 checks remove them on our sudden-drift scenario.
+
+On a change, one of five strategies adapts the model~\cite{iosifidis2017}:
+\emph{SlowIncreaseUpToALimit} ($\lambda \mathrel{+}= c$ up to $\lambda_{max}$),
+\emph{SlowIncreaseFastReset} (the same, reset after one window at $\lambda_{max}$),
+\emph{FastSetFastReset} ($\lambda = \lambda_{max}$ for one window),
+\emph{FastSetSlowDecrease} ($\lambda = \lambda_{max}$, then $-5\%$ per window) and
+\emph{Rebuild} (a new model on the instances buffered since the warning). Each comes in a
+\emph{-Zero-} ($\lambda_0 = 0$) and an \emph{-Init-} ($\lambda_0 > 0$) variant.
+
+\subsection{Enhancement: ADWIN on the Prediction Error}
+Prequential evaluation tests each tweet before learning it, so the model observes the error
+$e_i = [\hat{y}_i \neq y_i]$ for free. We feed $e_i$ to ADWIN~\cite{bifet2007,montiel2021} with
+$\delta = 0.01$ and count only cuts after which the error rate went \emph{up}. Because ADWIN
+watches $P(y\,|\,X)$ through the errors, it sees real drift regardless of the vocabulary.
+
+The two detectors drive two channels (Algorithm~\ref{alg:enhanced}): vocabulary signals go to the
+$\lambda$ strategy as in the baseline, ADWIN signals trigger a \emph{rebuild on ADWIN's post-drift
+window} (its current width, at least 100 instances). The fusion mode decides how they combine:
+\emph{vocab\_only} (the baseline), \emph{adwin\_only}, \emph{or} (both channels act; our main
+model) and \emph{and} (a signal counts only if the other detector fired within $w$ instances).
+Each channel has its own cooldown of 2{,}000 instances, and ADWIN starts after a 1{,}000-instance
+warm-up.
+
+Three design choices came from failures we observed. (i) Resetting ADWIN after every rebuild
+blinded it: a vocabulary false alarm one instance before the drift left a fresh ADWIN without a
+record of the normal error level. ADWIN is therefore never reset; it drops its old window itself
+when it fires. (ii) A shared cooldown let that same false alarm swallow ADWIN's detection 64
+instances later, hence per-channel cooldowns. (iii) A minimum rebuild size of 1{,}000 padded the
+rebuild with old-concept tweets because ADWIN fires within tens of instances; a minimum of 100
+reduced recovery on the label flip from 5{,}626 to 3{,}023 instances.
+
+\begin{algorithm}[t]
+\caption{Enhanced informed ageing MNB, one prequential step}\label{alg:enhanced}
+\begin{algorithmic}[1]
+\Require tweet $(d, y, t)$, model $M$, vocabulary detector $D_V$, ADWIN $D_A$, strategy $S$
+\State $\hat{y} \gets M.\textsc{predict}(d, t)$; \quad $M.\textsc{learn}(d, y, t)$
+\State append $(d, y, t)$ to the recent buffer $B$
+\If{$i \geq$ warm-up \textbf{and} $D_A.\textsc{update}([\hat{y} \neq y])$ signals a rise}
+  \If{fusion $\neq$ \textit{and} \textbf{or} $D_V$ fired within $w$}
+    \If{ADWIN channel not cooling down}
+      \State $M \gets$ new model trained on the last $\max(D_A.\mathrm{width}, 100)$ items of $B$
+    \EndIf
+  \EndIf
+\EndIf
+\If{fusion $\neq$ \textit{adwin\_only} \textbf{and} $D_V.\textsc{add}(d, y)$ completes a window}
+  \State $s \gets$ signal of $D_V$ \Comment{none / warning / change}
+  \If{fusion $=$ \textit{and}} $s \gets$ change iff $s \neq$ none and $D_A$ fired within $w$ \EndIf
+  \State apply $S.\textsc{onCheck}(s)$ to $M$ \Comment{set $\lambda$ or rebuild}
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Streaming Architecture}
+Fig.~\ref{fig:architecture} shows the system. A producer replays a stream in timestamp order into
+a single-partition Kafka topic (one partition preserves order). Spark executors parse the JSON
+and tokenise each tweet with the same function as the offline runner. Ageing MNB is sequential
+and stateful, so each micro-batch is collected to the driver inside \texttt{foreachBatch}, where
+the baseline and the enhanced model process it side by side, one tweet at a time in Kafka offset
+order. Per-model metrics, pipeline metrics and drift events go to InfluxDB and appear in Grafana
+with drift annotations. All models, detectors and metrics live in one Python package shared by
+the streaming consumer and an offline runner that replays the same parquet streams without
+Kafka for the experiment grid.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{fig0_architecture.pdf}
+\caption{System architecture. Spark executors tokenise; the driver runs both models on identical
+micro-batches and writes metrics and drift events to InfluxDB for Grafana.}
+\label{fig:architecture}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{baseline_overall_accuracy.pdf}
+\caption{Baseline reproduction: overall accuracy of the reference models and all informed
+strategies on DS1 and DS2 (Table~1 parameters of~\cite{iosifidis2017}).}
+\label{fig:baseline}
+\end{figure*}
+
+\input{tables/table_accuracy}
+
+\section{Experimental Setup}
+
+\subsection{Streams}
+\textbf{DS1} is Sentiment140~\cite{go2009}: 1.6M tweets from 6 April to 25 June 2009 with
+emoticon-derived labels. The file is sorted by label, so we sort by timestamp (Fig.~\ref{fig:ds1}).
+The last positive tweet is instance 1{,}324{,}774; from 1{,}324{,}775 the stream is all negative,
+matching the paper's change point at about 1{,}326{,}000. 1{,}685 tweet ids occur twice with
+opposite labels (label noise); we keep them in DS1 and DS2.
+\textbf{DS2} is the paper's volatile variant: removing class fractions from six equal segments of
+the pre-change stream gives exactly the paper's 1{,}073{,}065 tweets (378{,}288 positive), with
+the positive share swinging 68/27/70/17/56/28\% and then 0\%. The paper does not specify which
+instances it removed, so the segment pattern is our own.
+
+\textbf{Controlled scenarios} re-timestamp real tweets (one per second, 80{,}000 per stream)
+following Costa et al.~\cite{costa2014}, with keyword-defined topics A (work/school) and B
+(music/movies), each balanced 50/50 by class and without the duplicated ids: \emph{sudden} (A to
+B at 40k), \emph{gradual} (B's share rises from 0 to 1 over 30k--50k), \emph{recurring} (A, B, A,
+B every 20k), \emph{prior shift} (50\% to 10\% positive at 40k), \emph{label flip} (every label
+inverts at 40k; $P(X)$ and $P(y)$ unchanged) and \emph{label flip (topic)} (only topic A's labels
+invert). Each is generated with 5 seeds.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{ds1_hourly_class_distribution.pdf}
+\caption{DS1: (a) hourly class counts (cf.\ Fig.~1a of~\cite{iosifidis2017}); (b) positive
+share per 10k tweets with the natural change point.}
+\label{fig:ds1}
+\end{figure}
+
+\subsection{Models and Parameters}
+Reference models are the accumulative MNB and fading MNB (fixed $\lambda$; 0.2 on DS1 and the
+scenarios, 0.3 on DS2). The baseline reproduction uses Table~1 of~\cite{iosifidis2017} ($w =
+24$k on DS1, 22k on DS2; $\lambda_{max}$ for the SlowIncrease strategies, missing from the
+table, set to 0.5). In the grid we keep the two best baselines on DS1/DS2, Rebuild-Zero and
+SlowIncreaseFastReset-Zero, and build the enhancement on Rebuild-Zero so that the only
+difference from that baseline is the drift signal. Scenarios use $w = 4{,}000$. ADWIN's
+$\delta = 0.01$ and $\alpha_d = 1.8$ were chosen by a sweep of $\delta \in \{0.002, 0.01,
+0.05\}$ and $\alpha_d \in \{1.5, 1.8, 2.5\}$ over all scenarios and 3 seeds (432 runs): every
+enhanced setting beat every baseline setting, and $\delta = 0.01$ gave the fewest false alarms
+at equal accuracy.
+
+\subsection{Metrics}
+All models are evaluated prequentially (test, then train). We report accuracy and macro
+precision, recall and F1. A drift at $p$ (gradual: spanning $[p, e)$) counts as detected if a
+detection the model acted on falls into $[p, e + T)$ with $T = 10$k for the scenarios and 50k for
+DS1/DS2; the first such detection gives the delay, detections outside every interval are false
+alarms. Recovery time is the offset after $p$ of the first window (1k, DS: 10k instances) whose
+accuracy reaches 95\% of the pre-drift level, searched up to the next drift. Cost is throughput,
+processing time per 1k-tweet batch and model size in (word, class) entries offline, and latency
+and model time per tweet in Spark. DS1/DS2 ground truth contains only the designed drift points,
+so their false-alarm counts are upper bounds.
+
+\section{Results}
+
+\input{tables/table_main}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.92\textwidth]{fig3_detection.pdf}
+\caption{Detection per stream for the baseline and the enhanced (OR) model: (a) mean delay of the
+first detection, (b) false alarms per run, (c) share of drifts missed.}
+\label{fig:detection}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.92\textwidth]{fig5_ablation.pdf}
+\caption{Fusion modes: (a) accuracy gain over the baseline (Rebuild-Zero) per stream; (b)
+detected drifts and false alarms over all 47 drifts.}
+\label{fig:ablation}
+\end{figure*}
+
+\subsection{Baseline Reproduction}
+Fig.~\ref{fig:baseline} reproduces the paper's Fig.~2. The ordering holds on both streams:
+the accumulative MNB is worst (78.3\% on DS1, 80.3\% on DS2), fixed ageing helps (80.2\%,
+82.5\%) and informed strategies reach up to 81.4\% and 83.0\%. After DS1's change point the
+adaptive models reach 93--99.9\% while the accumulative MNB stays at 77\%. Two differences from
+the paper: our accumulative baseline is about 5 points stronger (paper: about 73\%), and
+\emph{-Zero-} variants beat \emph{-Init-} ones, because constant ageing costs 1--2 points in
+stable periods. A sweep of the fading $\lambda$ on DS1 (0.02--0.2 per hour) shows no value that
+avoids this trade-off (pre-change accuracy 77.8--76.3\%, tail 92--99\%), which supports the
+paper's own argument for forgetting only on detected change.
+
+
+
+
+
+\subsection{The Enhancement on Real Drift}
+Table~\ref{tab:accuracy} lists accuracy per stream and Table~\ref{tab:main} the main results.
+On the label flip (Fig.~\ref{fig:flip}) every model collapses to about 25\% when the labels
+invert. The accumulative and fading MNBs never recover within the stream; the baseline stays at
+about 25\% until its vocabulary detector fires one window (3{,}999 instances) later, and misses
+the flip entirely in one of five seeds. The enhanced model detects the flip after 39 instances,
+dips to about 58\%, is back near 70\% about 2{,}000 instances after the flip and reaches 95\% of
+its pre-drift level after 3{,}183 instances (baseline: 8{,}204); its accuracy is
+$73.8 \pm 0.3\%$ against $71.0 \pm 1.0\%$, and the spread over seeds is smaller. When only topic
+A's labels invert, the vocabulary detector misses the drift in 2 of 5 runs while ADWIN detects
+all five after about 120 instances (Fig.~\ref{fig:detection}). Accuracy rises only from 63.1\%
+to 63.5--64.0\% there, because MNB scores words independently and cannot represent a polarity
+change limited to one topic: every model is capped at about 64\% after that drift.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{fig2_label_flip_seeds.pdf}
+\caption{S-label-flip over 5 seeds: mean accuracy per 1k tweets (lines) and min--max over seeds
+(bands). All labels invert at 40k.}
+\label{fig:flip}
+\end{figure}
+
+
+
+\subsection{Detection, False Alarms and Recovery}
+Over all 47 true drifts (Fig.~\ref{fig:detection}, Table~\ref{tab:main}) the OR model detects 39
+with a mean delay of 2{,}290 instances, against 36 and 4{,}766 for the baseline. On DS1 ADWIN
+flags the natural change point 704 instances after it, against 19{,}224 for the vocabulary
+detector; on DS2 3{,}124 against 11{,}012. The price is false alarms: 102 for OR against 70,
+almost all from the vocabulary channel on DS1 and DS2. Recovery (Fig.~\ref{fig:recovery}) is
+2.6$\times$ faster on the label flip (3{,}183 vs 8{,}204 instances). On DS1 the enhanced model
+never falls below 95\% of its pre-change accuracy, while the baseline needs 2{,}384 instances; on
+DS2 the enhanced model recovers slightly more slowly (5{,}560 vs 4{,}610 instances). For the
+sudden and gradual topic switches accuracy never falls below the recovery target; on the
+recurring scenario both models need 2{,}436 instances, and on all three virtual drifts the
+models stay within 0.7 points of each other in accuracy.
+
+
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.85\columnwidth]{fig4_recovery.pdf}
+\caption{Recovery time per stream (mean, whiskers: min--max over seeds).}
+\label{fig:recovery}
+\end{figure}
+
+\subsection{Fusion Modes}
+Fig.~\ref{fig:ablation} compares the fusion modes. ADWIN alone gives the largest gains on the
+label flips and DS2 and the fewest false alarms (29), but it ignores pure prior shifts and topic
+switches because they do not raise the error: on the prior shift it loses 1.3 points, as does
+AND. OR keeps the vocabulary channel and with it the prior-shift detection: it never falls more
+than 0.04 points below the baseline on any stream, detects the most drifts and matches or beats
+the baseline in 28 of 32 stream--seed pairs. We therefore use OR as the main model and report
+the others as ablations.
+
+
+
+\subsection{Streaming Performance and Cost}
+Through Kafka and Spark the two models reproduce the offline accuracies (72\% and 74\% on the
+label flip at 1{,}000 tweets/s), and the dashboard shows the enhanced model's ADWIN marker at
+the flip while the baseline sits near 25\% (Fig.~\ref{fig:grafana}). With micro-batches capped
+at 1{,}000 tweets the pipeline keeps up with 2{,}000 tweets/s at a median latency of 0.42\,s
+(p95 0.76\,s) and saturates at about 2{,}840 tweets/s; with a cap of 5{,}000 it sustains
+5{,}593 tweets/s at a median latency below 1\,s. The bottleneck is Spark's fixed cost of about
+170\,ms per micro-batch, not the models: the baseline needs 22.6\,ms and the enhanced model
+32.9\,ms per 1{,}000 tweets (Table~\ref{tab:cost}); ADWIN itself costs under 1\,$\mu$s per
+update. Offline, all adaptive models process 37--46k tweets/s.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{grafana_label_flip.png}
+\caption{Grafana during a live S-label-flip run (1{,}000 tweets/s): baseline (orange) and
+enhanced (blue) side by side, drift annotations (orange: vocabulary detector, blue: ADWIN).}
+\label{fig:grafana}
+\end{figure}
+
+\input{tables/table_cost}
+
+\section{Discussion}
+The results support the motivating hypothesis: monitoring the classifier's error complements
+monitoring its input. The vocabulary detector is the right signal for changes in $P(X)$ and
+$P(y)$ (topic and prior shifts); ADWIN on the error is the right signal for changes in
+$P(y\,|\,X)$, and it is fast because it updates on every tweet rather than every $w$ tweets.
+Three further observations matter for practice. First, virtual drift barely affects an MNB
+classifier, so detecting it is informative but not necessary for accuracy; an error-based
+trigger avoids needless rebuilds. Second, $\lambda$-based strategies depend on the time scale:
+SlowIncreaseFastReset is the best baseline on DS1 (81.4\%) but reaches only 54.5\% on the label
+flip, because the scenarios span about 22 synthetic hours and a larger $\lambda$ per hour barely
+ages the model; rebuilding does not depend on the time unit. Third, the cheapest way to handle
+false alarms is a cheap reaction: rebuilding from recent data costs little accuracy when a
+false alarm occurs, which is why the OR model still improves accuracy despite more false alarms.
+
+\section{Limitations}
+Sentiment140 labels are derived from emoticons and noisy (1{,}685 tweets appear with both
+labels). The controlled drifts are synthetic, the topics are defined by keywords and the real
+streams' ground truth contains only designed drift points, so false alarms there are upper
+bounds. DS2's removal pattern is our own because the paper does not specify it, and our
+accumulative baseline is stronger than the paper's, which narrows the gaps we measure. The
+models are sequential, so Spark parallelises only ingestion and tokenisation; the model state
+lives on the driver and is lost on restart. Finally, the data is from 2009, so vocabulary and
+usage differ from today's platforms.
+
+\section{Conclusion and Future Work}
+We reproduced informed ageing MNB on Sentiment140 and showed that its vocabulary-based detector
+misses or delays drift that changes meaning without changing words. Adding ADWIN on the
+prequential error, fused with the vocabulary detector and combined with a rebuild on the
+post-drift window, detects such drift about 100 times sooner, recovers 2.6 times faster and
+improves accuracy on both real streams at negligible cost, in an end-to-end Kafka/Spark/Grafana
+pipeline. Future work includes a classifier that can model context-dependent polarity (to lift
+the naive Bayes ceiling we observed), drift-specific reactions (e.g.\ reweighting the class prior
+on a detected prior shift), keyed state so that Spark can partition the stream across executors,
+and evaluation on recent, event-driven streams such as the one studied by Bechini et
+al.~\cite{bechini2021}.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
