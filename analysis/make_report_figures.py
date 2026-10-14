@@ -84,10 +84,11 @@ def write_tex(df: pd.DataFrame, name: str, caption: str, label: str, col_format:
     esc = lambda s: str(s).replace("_", r"\_").replace("%", r"\%").replace("±", r"$\pm$")  # noqa: E731
     lines = [rf"\begin{{{env}}}[t]", r"\centering", r"\footnotesize",
              rf"\caption{{{caption}}}", rf"\label{{{label}}}",
+             r"\resizebox{\linewidth}{!}{%",  # scale to the column / page width
              rf"\begin{{tabular}}{{{col_format}}}", r"\toprule",
              " & ".join(esc(c) for c in df.columns) + r" \\", r"\midrule"]
     lines += [" & ".join(esc(v) for v in row) + r" \\" for row in df.itertuples(index=False)]
-    lines += [r"\bottomrule", r"\end{tabular}", rf"\end{{{env}}}"]
+    lines += [r"\bottomrule", r"\end{tabular}}", rf"\end{{{env}}}"]
     TEX_DIR.mkdir(parents=True, exist_ok=True)
     (TEX_DIR / f"{name}.tex").write_text("\n".join(lines) + "\n")
     print(f"wrote report/tables/{name}.tex")
