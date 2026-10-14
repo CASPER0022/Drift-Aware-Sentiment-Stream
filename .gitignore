@@ -30,3 +30,12 @@ data/
 # Temporary / Scratch Files
 scratch/
 *.log
+
+# LaTeX build files (report/ is compiled on Overleaf or with tectonic)
+*.aux
+*.bbl
+*.blg
+*.out
+*.synctex.gz
+*.fdb_latexmk
+*.fls

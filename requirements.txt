@@ -1,20 +1,24 @@
+# Pinned to the versions the reported results were produced with (Python 3.12.4).
+# The Spark containers use their own Python 3.10 environment: see docker/spark/Dockerfile.
+
 # Streaming infrastructure clients
-confluent-kafka>=2.5
+confluent-kafka==2.15.1
 pyspark==3.5.3          # must match the Spark version in docker-compose.yml
-influxdb-client>=1.44
+influxdb-client==1.50.0
 
 # Online learning / drift detection
-river>=0.22
+river==0.26.1
+numpy==2.5.3
 
 # Data + analysis
-pandas>=2.2
-pyarrow>=16
-matplotlib>=3.8
-jupyter
+pandas==3.0.6
+pyarrow==25.0.1
+matplotlib==3.11.2
+jupyter==1.1.1
 
 # System metrics + testing
-psutil>=5.9
-pytest>=8
-pyyaml>=6
-scikit-learn>=1.5       # reference MultinomialNB in the tests
-websocket-client>=1.8   # analysis/grafana_screenshot.py drives headless Edge/Chrome
+psutil==7.2.2
+pytest==9.1.1
+pyyaml==6.0.3
+scikit-learn==1.9.1     # reference MultinomialNB in the tests
+websocket-client==1.9.2 # analysis/grafana_screenshot.py drives headless Edge/Chrome
