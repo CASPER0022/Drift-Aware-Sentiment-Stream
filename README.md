@@ -8,7 +8,8 @@ forgetting is tuned by a vocabulary-based change detector) on Sentiment140, and 
 detector on the model's prediction errors**. The vocabulary detector only sees changes in *which
 words* are used; ADWIN also sees changes in *what they mean* (real drift with the same vocabulary).
 
-Group 18 · Streaming Data Analysis · report: [`report/report.pdf`](report/report.pdf)
+Team 18 · IOE413 Streaming Data Analytics · IIIT Kottayam · report: [`report/report.pdf`](report/report.pdf) ·
+slides and video guide: [`submission/video/`](submission/video)
 
 ![Architecture](analysis/figures/fig0_architecture.png)
 
@@ -60,8 +61,36 @@ analysis/        figure scripts and figures
 grafana/         provisioning + dashboard generator (build_dashboard.py)
 docker/spark/    Spark image with the Kafka connector, influxdb-client, numpy, river
 report/          IEEE paper (main.tex, refs.bib, tables/, figures/, report.pdf)
+submission/      slides (course template), video + run guide, packaging scripts (_build/)
 tests/           pytest suite (46 tests)
 ```
+
+## Tools and versions
+
+| Tool | Version | Role in the pipeline |
+|---|---|---|
+| Python | 3.12.4 (host); 3.10 inside the Spark image | all code |
+| Apache Kafka (KRaft mode) | 3.9.1 (`apache/kafka:3.9.1`) | ordered, replayable tweet log (topic `tweets`, 1 partition) |
+| Kafka UI | 0.7.2 | inspect topics and messages |
+| confluent-kafka | 2.15.1 | producer client |
+| Apache Spark (Structured Streaming) | 3.5.3, Scala 2.12, Java 17 (`apache/spark:3.5.3`) | consumer: parse, tokenize, run the models in `foreachBatch` |
+| spark-sql-kafka-0-10 / kafka-clients | 3.5.3 / 3.4.1 | Spark's Kafka source (baked into `docker/spark/Dockerfile`) |
+| PySpark | 3.5.3 | Spark Python API |
+| River | 0.26.1 (host), 0.22.0 (Spark image) | ADWIN drift detector |
+| InfluxDB | 2.7 | time-series store for metrics and drift events |
+| influxdb-client | 1.50.0 (host), 1.48.0 (Spark image) | writing / reading metrics |
+| Grafana OSS | 11.5.2 | live dashboard with drift annotations |
+| Docker / Docker Compose | 28.3.2 / v2.39.1 | runs Kafka, Kafka UI, Spark master + worker, InfluxDB, Grafana |
+| NumPy | 2.5.3 (host), 1.26.4 (Spark image) | numerics |
+| pandas / pyarrow | 3.0.6 / 25.0.1 | data preparation, parquet streams |
+| scikit-learn | 1.9.1 | reference `MultinomialNB` in the tests |
+| matplotlib | 3.11.2 | figures |
+| pytest | 9.1.1 | 46 unit tests |
+| psutil, PyYAML, websocket-client | 7.2.2, 6.0.3, 1.9.2 | memory metrics, configs, Grafana screenshots |
+| Tectonic (LaTeX, IEEEtran) | 0.15.0 | compiling the report (Overleaf works too) |
+
+Exact Python pins: [`requirements.txt`](requirements.txt); Spark image: [`docker/spark/Dockerfile`](docker/spark/Dockerfile);
+service images: [`docker-compose.yml`](docker-compose.yml).
 
 ## Prerequisites
 
@@ -170,11 +199,16 @@ Consumer options: `--models baseline enhanced accumulative ...` (presets in
 
 Deviations from the paper, and why, are recorded in the report (Sections III-V) and in `NOTES.md`.
 
-## Team contributions
+## Team
 
-| Member | Contribution |
+Team 18, IOE413 Streaming Data Analytics, IIIT Kottayam.
+
+| Member | Roll number |
 |---|---|
-| *TODO* | *TODO* |
+| Bichu Devnarayan | 2023BCS0102 |
+| Albin John | 2023BCD0005 |
+| Sarthak | 2023BCS0068 |
+| Aswin Paramesh | 2023BCD0024 |
 
 ## References
 
