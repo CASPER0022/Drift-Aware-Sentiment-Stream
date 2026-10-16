@@ -39,3 +39,9 @@ scratch/
 *.synctex.gz
 *.fdb_latexmk
 *.fls
+
+# Submission: generated copies and zips (rebuild with python submission/_build/package.py)
+submission/report/
+submission/code/
+submission/18_LMS_Upload/
+submission/_build/guide.html
